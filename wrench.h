@@ -135,7 +135,10 @@ WRENCH_DECL(bool, RegisterClass, (WrenVM* vm, const char* moduleName, const char
  */
 WRENCH_DECL(bool, RegisterMethod, (WrenVM* vm, const char* moduleName, const char* className, bool isStatic, const char* signature, WrenForeignMethodFn method));
 
-// TODO: wrenForEachModule
+/* Iterate over all loaded modules and call a callback on each of them.
+ */
+WRENCH_DECL(void, ForEachModule, (WrenVM* vm, void (*func)(WrenVM* vm, const char* moduleName, void* data), void* data));
+
 // TODO: wrenForEachClassInModule
 // TODO: wrenForEachMethodInClass
 
@@ -1202,6 +1205,16 @@ static bool wrenchRegisterMethod(WrenchContext* context, const char* moduleName,
     return true;
 }
 
+static void wrenchForEachModule(WrenchContext* context, void (*func)(WrenVM* vm, const char* moduleName, void* data), void* data)
+{
+    wrench_assert(func != NULL);
+
+    for (WrenchModule* node = context->module_head; node != NULL; node = node->next)
+    {
+        func(context->vm, node->name, data);
+    }
+}
+
 static void* wrenchLoadLibrary(WrenchContext* context, const char* name)
 {
     if (context->foreign_library_load_disabled)
@@ -1972,6 +1985,19 @@ WRENCH_IMPL(bool, RegisterMethod, (WrenVM* vm, const char* moduleName, const cha
     {
         return false;
     }
+}
+
+WRENCH_IMPL(void, ForEachModule, (WrenVM* vm, void (*func)(WrenVM* vm, const char* moduleName, void* data), void* data))
+{
+    if (vm == NULL)
+    {
+        return;
+    }
+
+    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+    wrench_assert(context != NULL);
+
+    wrenchForEachModule(context, func, data);
 }
 
 WRENCH_IMPL(float, GetSlotFloat, (WrenVM* vm, int slot))
