@@ -31,10 +31,10 @@ foreign class File {
         /*
          * TODO: Native/foreign method for perf.
          */
+        var EOF = type.EOF
         var s = []
 
         for (i in 0...count) {
-            var EOF = File.EOF
             var c = getc()
 
             if (c < 0 || c == EOF) {

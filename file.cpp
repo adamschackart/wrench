@@ -4,8 +4,6 @@
 ----------------------------------------------------------------------------- */
 #include <filesystem>
 
-extern "C" {
-
 #define WRENCH_IMPLEMENTATION
 #include <wrench.h>
 
@@ -76,7 +74,7 @@ static void file_ctor(WrenVM* vm)
 
 static void file_dtor(void* data)
 {
-    WRENCH_CHECK_MAGIC_TAG(data, File);
+    WRENCH_CHECK_MAGIC_TAG(data, file, File);
     FILE* file = ((File*)data)->file;
 
     if (file != NULL) { fclose(file); }
@@ -92,7 +90,7 @@ static void file_open(WrenVM* vm)
     if (file != NULL)
     {
         File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
-        WRENCH_SET_MAGIC_TAG(data, File);
+        WRENCH_SET_MAGIC_TAG(data, file, File);
 
         data->file = file;
     }
@@ -109,7 +107,7 @@ static void file_open(WrenVM* vm)
 static void file_close(WrenVM* vm)
 {
     File* self = (File*)wrenGetSlotForeign(vm, 0);
-    WRENCH_CHECK_MAGIC_TAG(self, File);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     if (fclose(self->file) != 0)
     {
@@ -123,7 +121,7 @@ static void file_close(WrenVM* vm)
 static void file_stdout(WrenVM* vm)
 {
     File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
-    WRENCH_SET_MAGIC_TAG(data, File);
+    WRENCH_SET_MAGIC_TAG(data, file, File);
 
     data->file = stdout;
 }
@@ -131,7 +129,7 @@ static void file_stdout(WrenVM* vm)
 static void file_stderr(WrenVM* vm)
 {
     File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
-    WRENCH_SET_MAGIC_TAG(data, File);
+    WRENCH_SET_MAGIC_TAG(data, file, File);
 
     data->file = stderr;
 }
@@ -139,7 +137,7 @@ static void file_stderr(WrenVM* vm)
 static void file_stdin(WrenVM* vm)
 {
     File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
-    WRENCH_SET_MAGIC_TAG(data, File);
+    WRENCH_SET_MAGIC_TAG(data, file, File);
 
     data->file = stdin;
 }
@@ -147,7 +145,7 @@ static void file_stdin(WrenVM* vm)
 static void file_getc(WrenVM* vm)
 {
     File* self = (File*)wrenGetSlotForeign(vm, 0);
-    WRENCH_CHECK_MAGIC_TAG(self, File);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     wrenSetSlotInt(vm, 0, getc(self->file));
 }
@@ -155,7 +153,7 @@ static void file_getc(WrenVM* vm)
 static void file_putc(WrenVM* vm)
 {
     File* self = (File*)wrenGetSlotForeign(vm, 0);
-    WRENCH_CHECK_MAGIC_TAG(self, File);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     switch (wrenGetSlotType(vm, 1))
     {
@@ -171,6 +169,7 @@ static void file_putc(WrenVM* vm)
 
             if (s[0] != '\0')
             {
+                wrench_assert(s[1] == '\0'); // One character.
                 wrenSetSlotInt(vm, 0, putc(s[0], self->file));
             }
             else
@@ -197,7 +196,7 @@ static void file_EOF(WrenVM* vm)
 static void file_eof(WrenVM* vm)
 {
     File* self = (File*)wrenGetSlotForeign(vm, 0);
-    WRENCH_CHECK_MAGIC_TAG(self, File);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     wrenSetSlotBool(vm, 0, feof(self->file) != 0);
 }
@@ -205,7 +204,7 @@ static void file_eof(WrenVM* vm)
 static void file_flush(WrenVM* vm)
 {
     File* self = (File*)wrenGetSlotForeign(vm, 0);
-    WRENCH_CHECK_MAGIC_TAG(self, File);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     if (fflush(self->file) != 0)
     {
@@ -257,5 +256,3 @@ WRENCH_EXPORT void fileWrenQuit(void)
 {
     //
 }
-
-} // extern "C"

@@ -5,7 +5,15 @@
 #ifndef __WRENCH_H__
 #define __WRENCH_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <wren.h>
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 /*
 ================================================================================
@@ -28,10 +36,18 @@
 /* Helper for foreign libraries.
  */
 #if !defined(WRENCH_EXPORT)
-    #if _MSC_VER
-        #define WRENCH_EXPORT __declspec(dllexport)
+    #if defined(__cplusplus)
+        #if _MSC_VER
+            #define WRENCH_EXPORT __declspec(dllexport) extern "C"
+        #else
+            #define WRENCH_EXPORT extern "C"
+        #endif
     #else
-        #define WRENCH_EXPORT extern
+        #if _MSC_VER
+            #define WRENCH_EXPORT __declspec(dllexport)
+        #else
+            #define WRENCH_EXPORT extern
+        #endif
     #endif
 #endif /* !WRENCH_EXPORT */
 
@@ -215,6 +231,8 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #include <dlfcn.h>
 #endif
 
+/* TODO: Some of these #defines are vestigial.
+ */
 #if !defined(wrench_alloca)
     #if _MSC_VER
         #define wrench_alloca _alloca
@@ -377,18 +395,18 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #endif
 
     #ifndef WRENCH_CHECK_MAGIC_TAG
-    #define WRENCH_CHECK_MAGIC_TAG(data, type_name) do                                                      \
-    {                                                                                                       \
-        wrench_assert((data) != NULL);                                                                      \
-        wrench_assert(((type_name*)(data))->_magic_tag != NULL);                                            \
-        wrench_assert(wrench_strcmp(((type_name*)(data))->_magic_tag, WRENCH_STRINGIFY(type_name)) == 0);   \
-    }                                                                                                       \
+    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) do                                                                            \
+    {                                                                                                                                           \
+        wrench_assert((data) != NULL);                                                                                                          \
+        wrench_assert(((class_name*)(data))->_magic_tag != NULL);                                                                               \
+        wrench_assert(wrench_strcmp(((class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)) == 0);   \
+    }                                                                                                                                           \
     while (0)
 
     #endif /* WRENCH_CHECK_MAGIC_TAG */
 
     #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, type_name) ((type_name*)(data))->_magic_tag = WRENCH_STRINGIFY(type_name)
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)
     #endif
 #else
     #ifndef WRENCH_MAGIC_TAG
@@ -396,11 +414,11 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #endif
 
     #ifndef WRENCH_CHECK_MAGIC_TAG
-    #define WRENCH_CHECK_MAGIC_TAG(data, type_name) ((void)0)
+    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) ((void)0)
     #endif
 
     #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, type_name) ((void)0)
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((void)0)
     #endif
 #endif /* WRENCH_DEBUG */
 
@@ -452,8 +470,6 @@ WrenchModule;
 
 typedef struct WrenchContext
 {
-    WRENCH_MAGIC_TAG;
-
     char error[1024 * 4];
     char* base_path;
 
@@ -930,6 +946,7 @@ static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name
 
     if (code != NULL)
     {
+        // TODO: If read and free callbacks are NULL, load directly into the source buffer.
         const char* copy = wrenchSourceCodeCopyEx(context, (const char*)code, *num_chars);
 
         wrenFileFreeFn free_func = wrenchGetFileFreeCallback(context);
