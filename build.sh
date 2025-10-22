@@ -3,7 +3,7 @@ if [ ! -d "wren" ]; then
     python3 -B wren/util/generate_amalgamation.py >> wren.c
 fi
 
-cc -g -c -o wren.o wren.c
+cc -g -fPIC -c -o wren.o wren.c
 
 cc -g -lm -ldl -I. -Iwren/src/include -o run_wren main.c wren.o
 cc -g -lm -ldl -lc++ -I. -Iwren/src/include -std=c++17 -fPIC -shared -o file.so file.cpp wren.o
