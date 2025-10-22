@@ -4,6 +4,35 @@
 ----------------------------------------------------------------------------- */
 
 foreign class Path {
+    // TODO: exists
+    // TODO: current
+    // TODO: base
+
+    // TODO: home
+    // TODO: desktop
+    // TODO: documents
+    // TODO: downloads
+    // TODO: music
+    // TODO: pictures
+    // TODO: public_share
+    // TODO: saved_games
+    // TODO: screenshots
+    // TODO: templates
+    // TODO: videos
+
+    // TODO: path
+    // TODO: fileName
+    // TODO: extension
+
+    // TODO: split
+    // TODO: join
+
+    // TODO: createDirectory
+    // TODO: createFile
+    // TODO: copyFile
+    // TODO: moveFile
+    // TODO: deleteFile
+
     foreign static list(path, recursive, include_subdirectories)
     static list(path, recursive) { list(path, recursive, true) }
     static list(path) { list(path, false, true) }
@@ -49,10 +78,58 @@ foreign class File {
 
     read() { read(Num.maxSafeInteger) }
 
+    static read(path) {
+        var file = open(path, "rb")
+        var data = file.read()
+
+        file.close()
+        return data
+    }
+
     // TODO: write
     // TODO: seek
     // TODO: tell
     // TODO: size
 
     foreign flush()
+
+    readLine(strip_newlines) {
+        var s = []
+
+        while (!eof()) {
+            s.insert(-1, read(1))
+
+            if (s[-1] == "\n") {
+                if (strip_newlines) {
+                    s.removeAt(-1)
+                }
+
+                break
+            }
+        }
+
+        return s.join()
+    }
+
+    readLine() { readLine(true) }
+
+    readLines(strip_newlines) {
+        var s = []
+
+        while (!eof()) {
+            s.insert(-1, readLine(strip_newlines))
+        }
+
+        return s
+    }
+
+    readLines() { readLines(true) }
+
+    static readLines(path) {
+        var file = open(path, "rb")
+        var text = file.readLines()
+
+        file.close()
+        return text
+    }
 }

@@ -1239,29 +1239,36 @@ static void* wrenchLoadLibrary(WrenchContext* context, const char* name)
         return NULL;
     }
 
+    char path[1024 * 4];
+    void* library;
+
     #if _WIN32
     {
-        char path[1024 * 4];
-
         wrench_snprintf(path, sizeof(path), "%s%s.dll", wrenchGetBasePath(context), name);
-        HMODULE library = LoadLibraryA((LPCSTR)path);
+        library = (void*)LoadLibraryA((LPCSTR)path);
 
-        if (library == NULL)
+        if (library != NULL)
         {
-            char error[1024 * 4];
-
-            wrench_snprintf(error, sizeof(error), "Failed to load library \"%s\"", name);
-            wrenchSetErrorString(context, (const char*)error);
+            return library;
         }
 
-        return (void*)library;
+        wrench_snprintf(path, sizeof(path), "%s.dll", name);
+        library = (void*)LoadLibraryA((LPCSTR)path);
+
+        if (library != NULL)
+        {
+            return library;
+        }
+
+        char error[1024 * 4]; // TODO: GetLastError() in case this DLL isn't missing.
+        wrench_snprintf(error, sizeof(error), "Failed to load library \"%s\"", name);
+
+        wrenchSetErrorString(context, (const char*)error);
+        return NULL;
     }
     #else
     {
         // TODO: lib prefix?
-
-        char path[1024 * 4];
-        void* library;
 
         wrench_snprintf(path, sizeof(path), "%s%s.so", wrenchGetBasePath(context), name);
         library = dlopen(path, RTLD_LAZY);
