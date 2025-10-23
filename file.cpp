@@ -169,7 +169,7 @@ static void file_putc(WrenVM* vm)
 
             if (s[0] != '\0')
             {
-                wrench_assert(s[1] == '\0'); // One character.
+                wrench_assert(s[1] == '\0', "multi-char string \"%s\"", s);
                 wrenSetSlotInt(vm, 0, putc(s[0], self->file));
             }
             else
