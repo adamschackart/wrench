@@ -954,6 +954,82 @@ static void wrenchSetFileFreeCallback(WrenchContext* context, wrenFileFreeFn cal
     context->file_free_callback = callback;
 }
 
+/* Load source code directly into the source code buffer.
+ */
+static const char* wrenchLoadSourceFileEx(WrenchContext* context, const char* name, size_t* num_chars)
+{
+    char path[1024 * 4], error[1024 * 4];
+
+    if (wrench_snprintf(path, sizeof(path), "%s%s.wren", wrenchGetBasePath(context), name) < 0)
+    {
+        // TODO: Handle truncation error.
+    }
+
+    FILE* file = wrench_fopen((const char*)path, "rb");
+
+    if (file == NULL)
+    {
+        wrench_snprintf(error, sizeof(error), "Source file \"%s\" not found.", (const char*)path);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return NULL;
+    }
+
+    if (wrench_fseek(file, 0, SEEK_END) != 0)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to get size of source file \"%s\".", (const char*)path);
+        wrenchSetErrorString(context, (const char*)error);
+
+        wrench_fclose(file);
+        return NULL;
+    }
+
+    *num_chars = (size_t)wrench_ftell(file);
+
+    if (wrench_fseek(file, 0, SEEK_SET) != 0)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to rewind source file \"%s\".", (const char*)path);
+        wrenchSetErrorString(context, (const char*)error);
+
+        wrench_fclose(file);
+        return NULL;
+    }
+
+    char* data = context->source_code_alloc_mark;
+    char* next = context->source_code_alloc_mark + (*num_chars + 1);
+
+    if (next > context->source_code_alloc_end)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to allocate space for source file \"%s\".", (const char*)path);
+        wrenchSetErrorString(context, (const char*)error);
+
+        wrench_fclose(file);
+        return NULL;
+    }
+
+    context->source_code_alloc_mark = next;
+    data[*num_chars] = '\0';
+
+    if (wrench_fread(data, *num_chars, 1, file) != 1)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to read source file \"%s\".", (const char*)path);
+        wrenchSetErrorString(context, (const char*)error);
+
+        wrench_fclose(file);
+        return NULL;
+    }
+
+    if (wrench_fclose(file) != 0)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to close source file \"%s\".", (const char*)path);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return NULL;
+    }
+
+    return (const char*)data;
+}
+
 static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name, size_t* num_chars)
 {
     if (wrench_strstr(name, ".wren") != NULL) // Strip file extension.
@@ -986,7 +1062,14 @@ static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name
     }
 
     *num_chars = 0;
+
     wrenFileReadFn read_func = wrenchGetFileReadCallback(context);
+    wrenFileFreeFn free_func = wrenchGetFileFreeCallback(context);
+
+    if (read_func == NULL && free_func == NULL)
+    {
+        return wrenchLoadSourceFileEx(context, name, num_chars);
+    }
 
     if (read_func == NULL)
     {
@@ -997,10 +1080,7 @@ static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name
 
     if (code != NULL)
     {
-        // TODO: If read and free callbacks are NULL, load directly into the source buffer.
         const char* copy = wrenchSourceCodeCopyEx(context, (const char*)code, *num_chars);
-
-        wrenFileFreeFn free_func = wrenchGetFileFreeCallback(context);
 
         if (free_func == NULL)
         {
@@ -2433,7 +2513,17 @@ int WRENCH_MAIN(int argc, char** argv)
 
     if (wrench_strstr(argv[1], ".wren") != NULL)
     {
-        result = wrenInterpret(vm, "main", wrenLoadSourceFile(vm, argv[1], NULL));
+        const char* code = wrenLoadSourceFile(vm, argv[1], NULL);
+
+        if (code != NULL)
+        {
+            result = wrenInterpret(vm, "main", code);
+        }
+        else
+        {
+            wrench_fprintf(wrench_stderr, "RUNTIME ERROR: Could not load source file '%s'.\n", argv[1]);
+            result = WREN_RESULT_RUNTIME_ERROR;
+        }
     }
     else
     {
