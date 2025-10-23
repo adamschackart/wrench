@@ -94,6 +94,9 @@ WRENCH_DECL(void, SetForeignLibraryLoadEnabled, (WrenVM* vm, bool enabled));
 WRENCH_DECL(const char*, GetErrorString, (WrenVM* vm));
 WRENCH_DECL(void, SetErrorString, (WrenVM* vm, const char* error));
 
+// TODO: GetName
+// TODO: SetName
+
 /* Wrench sets the VM userdata pointer for internal state, so use this instead.
  * Users and libs must decide for themselves how slots are allocated/reserved.
  */
@@ -150,6 +153,16 @@ WRENCH_DECL(bool, RegisterClass, (WrenVM* vm, const char* moduleName, const char
 /* Declare a foreign method within a class.
  */
 WRENCH_DECL(bool, RegisterMethod, (WrenVM* vm, const char* moduleName, const char* className, bool isStatic, const char* signature, WrenForeignMethodFn method));
+
+/* Usually the first VM opened.
+ */
+WRENCH_DECL(WrenVM*, GetPrimaryVM, (void));
+WRENCH_DECL(void, SetPrimaryVM, (WrenVM* vm));
+
+// TODO: ForEachVM
+
+// TODO: wrenCountVMs
+// TODO: wrenListVMs
 
 /* Iterate over all loaded modules and call a callback on each of them.
  */
@@ -470,6 +483,9 @@ WrenchModule;
 
 typedef struct WrenchContext
 {
+    struct WrenchContext* prev;
+    struct WrenchContext* next;
+
     char error[1024 * 4];
     char* base_path;
 
@@ -498,6 +514,11 @@ typedef struct WrenchContext
     void* userdata[16];
 }
 WrenchContext;
+
+static WrenchContext* wrench_primary_context;
+
+static WrenchContext* wrench_context_head;
+static WrenchContext* wrench_context_tail;
 
 static WrenchMethod* wrenchGetMethod(WrenchContext* context, WrenchClass* klass, bool is_static, const char* signature, WrenchMethod** previous)
 {
@@ -1407,6 +1428,21 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->source_code_alloc_end = context->source_code_alloc_base + WRENCH_SOURCE_CODE_BUFFER_SIZE;
     context->source_code_alloc_mark = context->source_code_alloc_base;
 
+    /* Link.
+     */
+    if (wrench_context_head == NULL && wrench_context_tail == NULL)
+    {
+        wrench_context_head =
+        wrench_context_tail = context;
+    }
+    else
+    {
+        wrench_context_tail->next = context;
+        context->prev = wrench_context_tail;
+
+        wrench_context_tail = context;
+    }
+
     return context;
 }
 
@@ -1454,6 +1490,19 @@ static void wrenchFreeContext(WrenchContext* context)
         }
 
         wrench_putchar('\n');
+    }
+
+    /* Unlink.
+     */
+    if (context->prev) context->prev->next = context->next;
+    if (context->next) context->next->prev = context->prev;
+
+    if (wrench_context_head == context) wrench_context_head = context->next;
+    if (wrench_context_tail == context) wrench_context_tail = context->prev;
+
+    if (wrench_primary_context == context)
+    {
+        wrench_primary_context = NULL;
     }
 
     wrenchFreeCommandLine(context);
@@ -2008,6 +2057,34 @@ WRENCH_IMPL(bool, RegisterMethod, (WrenVM* vm, const char* moduleName, const cha
     else
     {
         return false;
+    }
+}
+
+WRENCH_IMPL(WrenVM*, GetPrimaryVM, (void))
+{
+    if (wrench_primary_context != NULL)
+    {
+        return wrench_primary_context->vm;
+    }
+    else if (wrench_context_head != NULL)
+    {
+        return wrench_context_head->vm;
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+WRENCH_IMPL(void, SetPrimaryVM, (WrenVM* vm))
+{
+    if (vm != NULL)
+    {
+        wrench_primary_context = (WrenchContext*)wrenGetUserData(vm);
+    }
+    else
+    {
+        wrench_primary_context = NULL;
     }
 }
 
