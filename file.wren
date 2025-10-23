@@ -27,6 +27,9 @@ foreign class Path {
     // TODO: split
     // TODO: join
 
+    // TODO: isDirectory
+    // TODO: isFile
+
     // TODO: createDirectory
     // TODO: createFile
     // TODO: copyFile

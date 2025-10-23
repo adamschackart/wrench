@@ -433,18 +433,18 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #endif
 
     #ifndef WRENCH_CHECK_MAGIC_TAG
-    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) do                                                                                                                    \
-    {                                                                                                                                                                                   \
-        wrench_assert((data) != NULL, "");                                                                                                                                              \
-        wrench_assert(((class_name*)(data))->_magic_tag != NULL, "forgot to set magic tag on possible %s.%s", #module_name, #class_name);                                               \
-        wrench_assert(wrench_strcmp(((class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)) == 0, "%s", ((class_name*)(data))->_magic_tag);  \
-    }                                                                                                                                                                                   \
+    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) do                                                                                                                                                            \
+    {                                                                                                                                                                                                                           \
+        wrench_assert((data) != NULL, "");                                                                                                                                                                                      \
+        wrench_assert(((module_name ## _ ## class_name*)(data))->_magic_tag != NULL, "forgot to set magic tag on possible %s.%s", #module_name, #class_name);                                                                   \
+        wrench_assert(wrench_strcmp(((module_name ## _ ## class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)) == 0, "%s", ((module_name ## _ ## class_name*)(data))->_magic_tag);  \
+    }                                                                                                                                                                                                                           \
     while (0)
 
     #endif /* WRENCH_CHECK_MAGIC_TAG */
 
     #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((module_name ## _ ## class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)
     #endif
 #else
     #ifndef WRENCH_MAGIC_TAG
@@ -2333,6 +2333,7 @@ WRENCH_IMPL(WrenForeignMethodFn, DefaultBindForeignMethod, (WrenVM* vm, const ch
 
     if (1) // Unlink to reduce search space for the next bind operation.
     {
+        // TODO: Flags to control this behavior (SetUnlinkMethodOnBind).
         wrenchUnlinkMethod(context, klass, method, previous_method);
 
         if (klass->method_head == NULL)
@@ -2423,6 +2424,11 @@ int WRENCH_MAIN(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
+    #ifndef WRENCH_MAIN_INIT
+    #define WRENCH_MAIN_INIT() (void)0
+    #endif
+    WRENCH_MAIN_INIT();
+
     WrenInterpretResult result;
 
     if (wrench_strstr(argv[1], ".wren") != NULL)
@@ -2451,6 +2457,11 @@ int WRENCH_MAIN(int argc, char** argv)
 
         default: break;
     }
+
+    #ifndef WRENCH_MAIN_QUIT
+    #define WRENCH_MAIN_QUIT() (void)0
+    #endif
+    WRENCH_MAIN_QUIT();
 
     wrenFreeExtendedVM(vm, true);
     return EXIT_SUCCESS;

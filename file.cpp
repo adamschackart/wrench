@@ -13,7 +13,7 @@
 --------------------------------------------------------------------------------
 */
 
-static void path_list(WrenVM* vm)
+static void file_Path_list(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
     const bool recursive = wrenGetSlotBool(vm, 2);
@@ -60,27 +60,27 @@ static void path_list(WrenVM* vm)
 --------------------------------------------------------------------------------
 */
 
-typedef struct File
+typedef struct file_File
 {
     WRENCH_MAGIC_TAG;
     FILE* file;
 }
-File;
+file_File;
 
-static void file_ctor(WrenVM* vm)
+static void file_File_ctor(WrenVM* vm)
 {
     WRENCH_STUB();
 }
 
-static void file_dtor(void* data)
+static void file_File_dtor(void* data)
 {
     WRENCH_CHECK_MAGIC_TAG(data, file, File);
-    FILE* file = ((File*)data)->file;
+    FILE* file = ((file_File*)data)->file;
 
     if (file != NULL) { fclose(file); }
 }
 
-static void file_open(WrenVM* vm)
+static void file_File_open(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
     const char* mode = wrenGetSlotString(vm, 2);
@@ -89,7 +89,7 @@ static void file_open(WrenVM* vm)
 
     if (file != NULL)
     {
-        File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
+        file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
         WRENCH_SET_MAGIC_TAG(data, file, File);
 
         data->file = file;
@@ -104,9 +104,9 @@ static void file_open(WrenVM* vm)
     }
 }
 
-static void file_close(WrenVM* vm)
+static void file_File_close(WrenVM* vm)
 {
-    File* self = (File*)wrenGetSlotForeign(vm, 0);
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     if (fclose(self->file) != 0)
@@ -118,41 +118,41 @@ static void file_close(WrenVM* vm)
     }
 }
 
-static void file_stdout(WrenVM* vm)
+static void file_File_stdout(WrenVM* vm)
 {
-    File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
+    file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
     WRENCH_SET_MAGIC_TAG(data, file, File);
 
     data->file = stdout;
 }
 
-static void file_stderr(WrenVM* vm)
+static void file_File_stderr(WrenVM* vm)
 {
-    File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
+    file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
     WRENCH_SET_MAGIC_TAG(data, file, File);
 
     data->file = stderr;
 }
 
-static void file_stdin(WrenVM* vm)
+static void file_File_stdin(WrenVM* vm)
 {
-    File* data = (File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(File));
+    file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
     WRENCH_SET_MAGIC_TAG(data, file, File);
 
     data->file = stdin;
 }
 
-static void file_getc(WrenVM* vm)
+static void file_File_getc(WrenVM* vm)
 {
-    File* self = (File*)wrenGetSlotForeign(vm, 0);
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     wrenSetSlotInt(vm, 0, getc(self->file));
 }
 
-static void file_putc(WrenVM* vm)
+static void file_File_putc(WrenVM* vm)
 {
-    File* self = (File*)wrenGetSlotForeign(vm, 0);
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     switch (wrenGetSlotType(vm, 1))
@@ -188,22 +188,22 @@ static void file_putc(WrenVM* vm)
     }
 }
 
-static void file_EOF(WrenVM* vm)
+static void file_File_EOF(WrenVM* vm)
 {
     wrenSetSlotInt(vm, 0, EOF);
 }
 
-static void file_eof(WrenVM* vm)
+static void file_File_eof(WrenVM* vm)
 {
-    File* self = (File*)wrenGetSlotForeign(vm, 0);
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     wrenSetSlotBool(vm, 0, feof(self->file) != 0);
 }
 
-static void file_flush(WrenVM* vm)
+static void file_File_flush(WrenVM* vm)
 {
-    File* self = (File*)wrenGetSlotForeign(vm, 0);
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     if (fflush(self->file) != 0)
@@ -227,25 +227,25 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
     {
         if (!wrenRegisterClass(vm, "file", "Path", NULL, NULL)) { return false; } else
         {
-            if (!wrenRegisterMethod(vm, "file", "Path", true, "list(_,_,_)", path_list)) return false;
+            if (!wrenRegisterMethod(vm, "file", "Path", true, "list(_,_,_)", file_Path_list)) return false;
         }
 
-        if (!wrenRegisterClass(vm, "file", "File", file_ctor, file_dtor)) { return false; } else
+        if (!wrenRegisterClass(vm, "file", "File", file_File_ctor, file_File_dtor)) { return false; } else
         {
-            if (!wrenRegisterMethod(vm, "file", "File", true, "open(_,_)", file_open)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", false, "close()", file_close)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", true, "open(_,_)", file_File_open)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", false, "close()", file_File_close)) return false;
 
-            if (!wrenRegisterMethod(vm, "file", "File", true, "stdout", file_stdout)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", true, "stderr", file_stderr)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", true, "stdin", file_stdin)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", true, "stdout", file_File_stdout)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", true, "stderr", file_File_stderr)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", true, "stdin", file_File_stdin)) return false;
 
-            if (!wrenRegisterMethod(vm, "file", "File", false, "getc()", file_getc)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", false, "putc(_)", file_putc)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", false, "getc()", file_File_getc)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", false, "putc(_)", file_File_putc)) return false;
 
-            if (!wrenRegisterMethod(vm, "file", "File", true, "EOF", file_EOF)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", false, "eof()", file_eof)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", true, "EOF", file_File_EOF)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", false, "eof()", file_File_eof)) return false;
 
-            if (!wrenRegisterMethod(vm, "file", "File", false, "flush()", file_flush)) return false;
+            if (!wrenRegisterMethod(vm, "file", "File", false, "flush()", file_File_flush)) return false;
         }
     }
 
