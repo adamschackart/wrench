@@ -79,7 +79,7 @@ WRENCH_DECL(WrenConfiguration*, GetConfig, (void));
 WRENCH_DECL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_init_funcs));
 WRENCH_DECL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs));
 
-/* Functions that are called on the creation and destructions of each VM.
+/* Functions that are called on the creation and destruction of each VM.
  */
 WRENCH_DECL(void, RegisterGlobalInitFunction, (wrenLibraryInitFn init));
 WRENCH_DECL(void, RegisterGlobalQuitFunction, (wrenLibraryQuitFn quit));
@@ -159,7 +159,7 @@ WRENCH_DECL(bool, RegisterMethod, (WrenVM* vm, const char* moduleName, const cha
 WRENCH_DECL(WrenVM*, GetPrimaryVM, (void));
 WRENCH_DECL(void, SetPrimaryVM, (WrenVM* vm));
 
-// TODO: ForEachVM
+WRENCH_DECL(void, ForEachVM, (void (*func)(WrenVM* vm, void* data), void* data));
 
 // TODO: wrenCountVMs
 // TODO: wrenListVMs
@@ -2085,6 +2085,25 @@ WRENCH_IMPL(void, SetPrimaryVM, (WrenVM* vm))
     else
     {
         wrench_primary_context = NULL;
+    }
+}
+
+WRENCH_IMPL(void, ForEachVM, (void (*func)(WrenVM* vm, void* data), void* data))
+{
+    if (func == NULL)
+    {
+        return;
+    }
+
+    WrenchContext* node = wrench_context_head;
+
+    while (node != NULL)
+    {
+        // In case func frees the Wren VM.
+        WrenchContext* next = node->next;
+
+        func(node->vm, data);
+        node = next;
     }
 }
 
