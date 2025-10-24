@@ -65,6 +65,85 @@ typedef unsigned char uint8_t;
 #undef GetCommandLine
 #undef RegisterClass
 
+/* ===== [ foreign library helpers ] ======================================== */
+
+#ifndef WREN_BEGIN_CLASS_EX
+#define WREN_BEGIN_CLASS_EX(moduleName, className, ctor, dtor) do       \
+{                                                                       \
+    if (!wrenCode(vm, "foreign class " #className " {\n"))              \
+    {                                                                   \
+        return false;                                                   \
+    }                                                                   \
+                                                                        \
+    if (!wrenRegisterClass(vm, #moduleName, #className, ctor, dtor))    \
+    {                                                                   \
+        return false;                                                   \
+    }                                                                   \
+}                                                                       \
+while (0)                                                               \
+
+#endif /* WREN_BEGIN_CLASS_EX */
+
+#ifndef WREN_BEGIN_CLASS
+#define WREN_BEGIN_CLASS(moduleName, className)                                                                                 \
+                                                                                                                                \
+    WREN_BEGIN_CLASS_EX(moduleName, className, moduleName ## _ ## className ## _ctor, moduleName ## _ ## className ## _dtor)    \
+
+#endif /* WREN_BEGIN_CLASS */
+
+#ifndef WREN_END_CLASS
+#define WREN_END_CLASS() do     \
+{                               \
+    if (!wrenCode(vm, "}\n"))   \
+    {                           \
+        return false;           \
+    }                           \
+}                               \
+while (0)                       \
+
+#endif /* WREN_END_CLASS */
+
+#define _wren_static_true "static "
+#define _wren_static_false ""
+#define _wren_static_1 "static "
+#define _wren_static_0 ""
+
+#ifndef WREN_METHOD_EX
+#define WREN_METHOD_EX(moduleName, className, is_static, methodName, args, signature, func) do      \
+{                                                                                                   \
+    if (!wrenCode(vm, "foreign " _wren_static_ ## is_static #methodName args "\n"))                 \
+    {                                                                                               \
+        return false;                                                                               \
+    }                                                                                               \
+                                                                                                    \
+    if (!wrenRegisterMethod(vm, #moduleName, #className, is_static, #methodName signature, func))   \
+    {                                                                                               \
+        return false;                                                                               \
+    }                                                                                               \
+}                                                                                                   \
+while (0)
+
+#endif /* WREN_METHOD_EX */
+
+#ifndef WREN_METHOD
+#define WREN_METHOD(moduleName, className, is_static, methodName, args, signature)                                                  \
+                                                                                                                                    \
+    WREN_METHOD_EX(moduleName, className, is_static, methodName, args, signature, moduleName ## _ ## className ## _ ## methodName)  \
+
+#endif /* WREN_METHOD */
+
+#ifndef WREN_CODE
+#define WREN_CODE(text) do          \
+{                                   \
+    if (!wrenCode(vm, text "\n"))   \
+    {                               \
+        return false;               \
+    }                               \
+}                                   \
+while (0)
+
+#endif /* WREN_CODE */
+
 /*
 ================================================================================
  * ~~ [ public API ] ~~ *

@@ -223,33 +223,161 @@ static void file_File_flush(WrenVM* vm)
 
 WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 {
-    if (!wrenRegisterModule(vm, "file", NULL)) { return false; } else
+    if (!wrenBeginModule(vm, "file")) { return false; } else
     {
-        if (!wrenRegisterClass(vm, "file", "Path", NULL, NULL)) { return false; } else
+        WREN_BEGIN_CLASS_EX(file, Path, NULL, NULL);
         {
-            if (!wrenRegisterMethod(vm, "file", "Path", true, "list(_,_,_)", file_Path_list)) return false;
-        }
+            // TODO: exists
+            // TODO: current
+            // TODO: base
 
-        if (!wrenRegisterClass(vm, "file", "File", file_File_ctor, file_File_dtor)) { return false; } else
+            // TODO: home
+            // TODO: desktop
+            // TODO: documents
+            // TODO: downloads
+            // TODO: music
+            // TODO: pictures
+            // TODO: public_share
+            // TODO: saved_games
+            // TODO: screenshots
+            // TODO: templates
+            // TODO: videos
+
+            // TODO: path
+            // TODO: fileName
+            // TODO: extension
+
+            // TODO: split
+            // TODO: join
+
+            // TODO: isDirectory
+            // TODO: isFile
+
+            // TODO: createDirectory
+            // TODO: createFile
+            // TODO: copyFile
+            // TODO: moveFile
+            // TODO: deleteFile
+
+            WREN_METHOD(file, Path, true, list, "(path, recursive, include_subdirectories)", "(_,_,_)");
+            WREN_CODE("static list(path, recursive) { list(path, recursive, true) }");
+            WREN_CODE("static list(path) { list(path, false, true) }");
+            WREN_CODE("static walk(path) { list(path, true, true) }");
+        }
+        WREN_END_CLASS();
+
+        WREN_BEGIN_CLASS(file, File);
         {
-            if (!wrenRegisterMethod(vm, "file", "File", true, "open(_,_)", file_File_open)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", false, "close()", file_File_close)) return false;
+            WREN_METHOD(file, File, true, open, "(path, mode)", "(_,_)");
+            WREN_METHOD(file, File, false, close, "()", "()");
 
-            if (!wrenRegisterMethod(vm, "file", "File", true, "stdout", file_File_stdout)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", true, "stderr", file_File_stderr)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", true, "stdin", file_File_stdin)) return false;
+            // TODO: name
+            // TODO: mode
 
-            if (!wrenRegisterMethod(vm, "file", "File", false, "getc()", file_File_getc)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", false, "putc(_)", file_File_putc)) return false;
+            /* XXX: `stdout` et al. are #defined on most platforms, requiring a bit of a workaround here.
+             */
+            WREN_METHOD_EX(file, File, true, stdout, "", "", file_File_stdout);
+            WREN_METHOD_EX(file, File, true, stderr, "", "", file_File_stderr);
+            WREN_METHOD_EX(file, File, true, stdin, "", "", file_File_stdin);
 
-            if (!wrenRegisterMethod(vm, "file", "File", true, "EOF", file_File_EOF)) return false;
-            if (!wrenRegisterMethod(vm, "file", "File", false, "eof()", file_File_eof)) return false;
+            /* XXX: getc and putc are also macros (which is all that differentiates them from fgetc/fputc).
+             */
+            WREN_METHOD_EX(file, File, false, getc, "()", "()", file_File_getc);
+            WREN_METHOD_EX(file, File, false, putc, "(c)", "(_)", file_File_putc);
 
-            if (!wrenRegisterMethod(vm, "file", "File", false, "flush()", file_File_flush)) return false;
+            WREN_METHOD_EX(file, File, true, EOF, "", "", file_File_EOF);
+            WREN_METHOD(file, File, false, eof, "()", "()");
+
+            /* TODO: Native/foreign methods for performance.
+             */
+            if (!wrenCode(vm,
+
+            "read(count) {\n"
+                "var EOF = type.EOF\n"
+                "var s = []\n"
+
+                "for (i in 0...count) {\n"
+                    "var c = getc()\n"
+
+                    "if (c < 0 || c == EOF) {\n"
+                        "break\n"
+                    "} else {\n"
+                        "s.insert(-1, String.fromByte(c))\n"
+                    "}\n"
+                "}\n"
+
+                "return s.join()\n"
+            "}\n"
+
+            "read() { read(Num.maxSafeInteger) }\n"
+
+            "static read(path) {\n"
+                "var file = open(path, \"rb\")\n"
+                "var data = file.read()\n"
+
+                "file.close()\n"
+                "return data\n"
+            "}\n"
+
+            )) { return false; }
+
+            // TODO: write
+            // TODO: seek
+            // TODO: tell
+            // TODO: size
+
+            WREN_METHOD(file, File, false, flush, "()", "()");
+
+            /* TODO: Native/foreign methods for performance.
+             */
+            if (!wrenCode(vm,
+
+            "readLine(strip_newlines) {\n"
+                "var s = []\n"
+
+                "while (!eof()) {\n"
+                    "s.insert(-1, read(1))\n"
+
+                    "if (s[-1] == \"\n\") {\n"
+                        "if (strip_newlines) {\n"
+                            "s.removeAt(-1)\n"
+                        "}\n"
+
+                        "break\n"
+                    "}\n"
+                "}\n"
+
+                "return s.join()\n"
+            "}\n"
+
+            "readLine() { readLine(true) }\n"
+
+            "readLines(strip_newlines) {\n"
+                "var s = []\n"
+
+                "while (!eof()) {\n"
+                    "s.insert(-1, readLine(strip_newlines))\n"
+                "}\n"
+
+                "return s\n"
+            "}\n"
+
+            "readLines() { readLines(true) }\n"
+
+            "static readLines(path) {\n"
+                "var file = open(path, \"rb\")\n"
+                "var text = file.readLines()\n"
+
+                "file.close()\n"
+                "return text\n"
+            "}\n"
+
+            )) { return false; }
         }
+        WREN_END_CLASS();
     }
 
-    return true;
+    return wrenEndModule(vm);
 }
 
 WRENCH_EXPORT void fileWrenQuit(void)
