@@ -2,10 +2,11 @@
 --- Copyright (c) 2012-2026 Adam Schackart / "AJ Hackman", all rights reserved.
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 ----------------------------------------------------------------------------- */
-#include <filesystem>
 
 #define WRENCH_IMPLEMENTATION
-#include <wrench.h>
+#include <file.h>
+
+#include <filesystem>
 
 /*
 ================================================================================
@@ -59,13 +60,6 @@ static void file_Path_list(WrenVM* vm)
  * ~~ [ file ] ~~ *
 --------------------------------------------------------------------------------
 */
-
-typedef struct file_File
-{
-    WRENCH_MAGIC_TAG;
-    FILE* file;
-}
-file_File;
 
 static void file_File_ctor(WrenVM* vm)
 {
@@ -273,6 +267,8 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 
             // TODO: name
             // TODO: mode
+
+            // TODO: toString
 
             /* XXX: `stdout` et al. are #defined on most platforms, requiring a bit of a workaround here.
              */

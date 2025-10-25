@@ -17,7 +17,22 @@ extern "C" {
 
 /*
 ================================================================================
- * ~~ [ macros & types ] ~~ *
+ * ~~ [ types ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+// Avoid including <stdint.h>.
+typedef unsigned char uint8_t;
+
+typedef void* (*wrenFileReadFn)(WrenVM* vm, const char* name, size_t* size);
+typedef void  (*wrenFileFreeFn)(WrenVM* vm, void* data, size_t size);
+
+typedef bool (*wrenLibraryInitFn)(WrenVM* vm);
+typedef void (*wrenLibraryQuitFn)(void);
+
+/*
+================================================================================
+ * ~~ [ macros ] ~~ *
 --------------------------------------------------------------------------------
 */
 
@@ -33,7 +48,7 @@ extern "C" {
 #define WRENCH_IMPL(ret, name, args) ret wren ## name args
 #endif
 
-/* Helper for foreign libraries.
+/* Helper for foreign library init and quit functions.
  */
 #if !defined(WRENCH_EXPORT)
     #if defined(__cplusplus)
@@ -51,14 +66,15 @@ extern "C" {
     #endif
 #endif /* !WRENCH_EXPORT */
 
-typedef void* (*wrenFileReadFn)(WrenVM* vm, const char* name, size_t* size);
-typedef void (*wrenFileFreeFn)(WrenVM* vm, void* data, size_t size);
-
-typedef bool (*wrenLibraryInitFn)(WrenVM* vm);
-typedef void (*wrenLibraryQuitFn)(void);
-
-// Avoid including <stdint.h>.
-typedef unsigned char uint8_t;
+/* Enables safety checks at a performance cost.
+ */
+#if !defined(WRENCH_DEBUG)
+    #if defined(_DEBUG) || defined(DEBUG) || (defined(__GNUC__) && !defined(__OPTIMIZE__)) || !NDEBUG
+        #define WRENCH_DEBUG 1
+    #else
+        #define WRENCH_DEBUG 0
+    #endif
+#endif /* !WRENCH_DEBUG */
 
 /* Win32 definitions.
  */
@@ -132,6 +148,12 @@ while (0)
 
 #endif /* WREN_METHOD */
 
+// TODO: WREN_GETTER
+
+// TODO: WREN_SETTER
+
+// TODO: WREN_PROPERTY (getter + setter)
+
 #ifndef WREN_CODE
 #define WREN_CODE(text) do          \
 {                                   \
@@ -143,6 +165,18 @@ while (0)
 while (0)
 
 #endif /* WREN_CODE */
+
+/* ===== [ foreign type checking ] ========================================== */
+
+#if WRENCH_DEBUG
+    #ifndef WRENCH_MAGIC_TAG
+    #define WRENCH_MAGIC_TAG const char* _magic_tag
+    #endif
+#else
+    #ifndef WRENCH_MAGIC_TAG
+    #define WRENCH_MAGIC_TAG
+    #endif
+#endif /* WRENCH_DEBUG */
 
 /*
 ================================================================================
@@ -366,6 +400,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_memcpy
 #define wrench_memcpy memcpy
 #endif
+#ifndef wrench_memmove
+#define wrench_memmove memmove
+#endif
 #ifndef wrench_memset
 #define wrench_memset memset
 #endif
@@ -469,16 +506,6 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
                                 && (x) < ((double)WRENCH_MAX_SAFE_INT + WRENCH_DBL_EPSILON))
 #endif
 
-/* Macros for C type checking.
- */
-#if !defined(WRENCH_DEBUG)
-    #if defined(_DEBUG) || defined(DEBUG) || (defined(__GNUC__) && !defined(__OPTIMIZE__))
-        #define WRENCH_DEBUG 1
-    #else
-        #define WRENCH_DEBUG 0
-    #endif
-#endif /* !WRENCH_DEBUG */
-
 #if !defined(wrench_breakpoint)
     #if _WIN32
         extern void __cdecl __debugbreak(void);
@@ -506,30 +533,24 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 }
 #endif /* wrench_assert */
 
+/* Macros for C type checking. Replaces `if (!(x is Foo)) { Fiber.abort(...) }` in Wren.
+ */
 #if WRENCH_DEBUG
-    #ifndef WRENCH_MAGIC_TAG
-    #define WRENCH_MAGIC_TAG const char* _magic_tag
-    #endif
-
     #ifndef WRENCH_CHECK_MAGIC_TAG
     #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) do                                                                                                                                                            \
     {                                                                                                                                                                                                                           \
         wrench_assert((data) != NULL, "");                                                                                                                                                                                      \
-        wrench_assert(((module_name ## _ ## class_name*)(data))->_magic_tag != NULL, "forgot to set magic tag on possible %s.%s", #module_name, #class_name);                                                                   \
-        wrench_assert(wrench_strcmp(((module_name ## _ ## class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)) == 0, "%s", ((module_name ## _ ## class_name*)(data))->_magic_tag);  \
+        wrench_assert(((module_name ## _ ## class_name*)(data))->_magic_tag != NULL, "forgot to set magic tag on possible %s_%s", WRENCH_STRINGIFY(module_name), WRENCH_STRINGIFY(class_name));                                 \
+        wrench_assert(wrench_strcmp(((module_name ## _ ## class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)) == 0, "%s", ((module_name ## _ ## class_name*)(data))->_magic_tag);  \
     }                                                                                                                                                                                                                           \
     while (0)
 
     #endif /* WRENCH_CHECK_MAGIC_TAG */
 
     #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((module_name ## _ ## class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "." WRENCH_STRINGIFY(class_name)
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((module_name ## _ ## class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)
     #endif
 #else
-    #ifndef WRENCH_MAGIC_TAG
-    #define WRENCH_MAGIC_TAG
-    #endif
-
     #ifndef WRENCH_CHECK_MAGIC_TAG
     #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) ((void)0)
     #endif
@@ -606,6 +627,9 @@ typedef struct WrenchContext
     char* source_code_alloc_base;
     char* source_code_alloc_end;
     char* source_code_alloc_mark;
+
+    // Avoiding O(n^2) module iteration.
+    WrenchModule* last_accessed_module;
 
     WrenchModule* module_being_built;
     char* module_builder_base;
@@ -688,6 +712,25 @@ static WrenchClass* wrenchGetClass(WrenchContext* context, WrenchModule* module,
 
 static WrenchModule* wrenchGetModule(WrenchContext* context, const char* name, WrenchModule** previous)
 {
+    if (context->last_accessed_module != NULL)
+    {
+        if (previous == NULL && wrench_strcmp(name, context->last_accessed_module->name) == 0)
+        {
+            return context->last_accessed_module;
+        }
+
+        if (context->last_accessed_module->next != NULL && wrench_strcmp(name, context->last_accessed_module->next->name) == 0)
+        {
+            if (previous != NULL)
+            {
+                *previous = context->last_accessed_module;
+            }
+
+            context->last_accessed_module = context->last_accessed_module->next;
+            return context->last_accessed_module;
+        }
+    }
+
     WrenchModule* node = context->module_head;
     WrenchModule* prev = NULL;
 
@@ -700,6 +743,7 @@ static WrenchModule* wrenchGetModule(WrenchContext* context, const char* name, W
                 *previous = prev;
             }
 
+            context->last_accessed_module = node;
             return node;
         }
 
@@ -753,6 +797,11 @@ static void wrenchUnlinkClass(WrenchContext* context, WrenchModule* module, Wren
 
 static void wrenchUnlinkModule(WrenchContext* context, WrenchModule* module, WrenchModule* previous)
 {
+    if (context->last_accessed_module == module)
+    {
+        context->last_accessed_module = NULL;
+    }
+
     if (previous != NULL)
     {
         previous->next = module->next;
@@ -2626,6 +2675,8 @@ int WRENCH_MAIN(int argc, char** argv)
 
         default: break;
     }
+
+    // TODO: If the main module has a main() function, call it here.
 
     #ifndef WRENCH_MAIN_QUIT
     #define WRENCH_MAIN_QUIT() (void)0
