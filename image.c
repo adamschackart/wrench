@@ -35,7 +35,33 @@
 
 static void image_Image_ctor(WrenVM* vm)
 {
-    WRENCH_STUB();
+    const int width = wrenGetSlotInt(vm, 1);
+    const int height = wrenGetSlotInt(vm, 2);
+    const int color_channels = wrenGetSlotInt(vm, 3);
+    const int bytes_per_channel = wrenGetSlotInt(vm, 4);
+
+    char error[1024 * 4];
+    void* pixels = wrench_calloc(1, width * height * color_channels * bytes_per_channel);
+
+    if (pixels != NULL)
+    {
+        image_Image* self = (image_Image*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(image_Image));
+        WRENCH_SET_MAGIC_TAG(self, image, Image);
+
+        self->pixels = pixels;
+        self->width = width;
+        self->height = height;
+        self->color_channels = color_channels;
+        self->bytes_per_channel = bytes_per_channel;
+    }
+    else
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to allocate %ix%ix%ix%i image.",
+                                    width, height, color_channels, bytes_per_channel);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+    }
 }
 
 static void image_Image_dtor(void* data)
@@ -187,11 +213,60 @@ static void image_Image_save(WrenVM* vm)
     }
 }
 
+static void image_Image_width_get(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrenSetSlotInt(vm, 0, self->width);
+}
+
+static void image_Image_height_get(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrenSetSlotInt(vm, 0, self->height);
+}
+
+static void image_Image_colorChannels_get(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrenSetSlotInt(vm, 0, self->color_channels);
+}
+
+static void image_Image_bytesPerChannel_get(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrenSetSlotInt(vm, 0, self->bytes_per_channel);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
 --------------------------------------------------------------------------------
 */
+
+#if WRENCH_IMAGE_EXTENDED
+    /*
+     * Enable user extension of stdlib modules.
+     */
+    #include <image_ex.inl>
+#else
+    static bool imageWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static void imageWrenQuitEx(void)
+    {
+        //
+    }
+#endif /* WRENCH_IMAGE_EXTENDED */
 
 WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
 {
@@ -199,6 +274,8 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
     {
         WREN_BEGIN_CLASS(image, Image);
         {
+            WREN_CODE("construct new(width, height, colorChannels, bytesPerChannel) {}");
+
             WREN_METHOD(image, Image, true, load, "(filename, desiredColorChannels, desiredBytesPerChannel)", "(_,_,_)");
             WREN_CODE("static load(filename) { load(filename, 0, 0) }");
 
@@ -228,21 +305,24 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             WREN_CODE("static FLOAT { 4 }");
 
             // TODO: data
-            // TODO: colorChannels
-            // TODO: colorChannels=
-            // TODO: isMono
-            // TODO: isMono=
-            // TODO: isRGB
-            // TODO: isRGB=
-            // TODO: isRGBA
-            // TODO: isRGBA=
-            // TODO: bytesPerChannel
-            // TODO: bytesPerChannel=
-            // TODO: bytesPerPixel
-            // TODO: bytesPerPixel=
-            // TODO: width
-            // TODO: height
-            // TODO: pitch
+
+            WREN_GETTER(image, Image, false, width);
+            WREN_GETTER(image, Image, false, height);
+            WREN_GETTER(image, Image, false, colorChannels);
+            WREN_GETTER(image, Image, false, bytesPerChannel);
+
+            WREN_CODE("bytesPerPixel { colorChannels * bytesPerChannel }");
+
+            WREN_CODE("isMono { colorChannels == 1 }");
+            WREN_CODE("isRGB { colorChannels == 3 }");
+            WREN_CODE("isRGBA { colorChannels == 4 }");
+
+            WREN_CODE("isBytes { bytesPerChannel == 1 }");
+            WREN_CODE("isShorts { bytesPerChannel == 2 }");
+            WREN_CODE("isFloats { bytesPerChannel == 4 }");
+
+            WREN_CODE("bytes { width * height * colorChannels * bytesPerChannel }");
+            WREN_CODE("pitch { width * colorChannels * bytesPerChannel }");
 
             // TODO: resize
             // TODO: convert
@@ -250,10 +330,15 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
         WREN_END_CLASS();
     }
 
+    if (!imageWrenInitEx(vm))
+    {
+        return false;
+    }
+
     return wrenEndModule(vm);
 }
 
 WRENCH_EXPORT void imageWrenQuit(void)
 {
-    //
+    imageWrenQuitEx();
 }

@@ -148,11 +148,80 @@ while (0)
 
 #endif /* WREN_METHOD */
 
-// TODO: WREN_GETTER
+#ifndef WREN_GETTER_EX
+#define WREN_GETTER_EX(moduleName, className, is_static, propertyName, func) do             \
+{                                                                                           \
+    if (!wrenCode(vm, "foreign " _wren_static_ ## is_static #propertyName "\n"))            \
+    {                                                                                       \
+        return false;                                                                       \
+    }                                                                                       \
+                                                                                            \
+    if (!wrenRegisterMethod(vm, #moduleName, #className, is_static, #propertyName, func))   \
+    {                                                                                       \
+        return false;                                                                       \
+    }                                                                                       \
+}                                                                                           \
+while (0)
 
-// TODO: WREN_SETTER
+#endif /* WREN_GETTER_EX */
 
-// TODO: WREN_PROPERTY (getter + setter)
+#ifndef WREN_GETTER
+#define WREN_GETTER(moduleName, className, is_static, propertyName)                                                             \
+                                                                                                                                \
+    WREN_GETTER_EX(moduleName, className, is_static, propertyName, moduleName ## _ ## className ## _ ## propertyName ## _get)   \
+
+#endif /* WREN_GETTER */
+
+#ifndef WREN_SETTER_EX
+#define WREN_SETTER_EX(moduleName, className, is_static, propertyName, func) do                     \
+{                                                                                                   \
+    if (!wrenCode(vm, "foreign " _wren_static_ ## is_static #propertyName "=(value)\n"))            \
+    {                                                                                               \
+        return false;                                                                               \
+    }                                                                                               \
+                                                                                                    \
+    if (!wrenRegisterMethod(vm, #moduleName, #className, is_static, #propertyName "=(_)", func))    \
+    {                                                                                               \
+        return false;                                                                               \
+    }                                                                                               \
+}                                                                                                   \
+while (0)
+
+#endif /* WREN_SETTER_EX */
+
+#ifndef WREN_SETTER
+#define WREN_SETTER(moduleName, className, is_static, propertyName)                                                             \
+                                                                                                                                \
+    WREN_SETTER_EX(moduleName, className, is_static, propertyName, moduleName ## _ ## className ## _ ## propertyName ## _set)   \
+
+#endif /* WREN_SETTER */
+
+#ifndef WREN_PROPERTY_EX
+#define WREN_PROPERTY_EX(moduleName, className, is_static, propertyName, getter, setter) do \
+{                                                                                           \
+    WREN_GETTER_EX(moduleName, className, is_static, propertyName, getter);                 \
+    WREN_SETTER_EX(moduleName, className, is_static, propertyName, setter);                 \
+}                                                                                           \
+while (0)
+
+#endif /* WREN_PROPERTY_EX */
+
+#ifndef WREN_PROPERTY
+#define WREN_PROPERTY(moduleName, className, is_static, propertyName, getter, setter) do    \
+{                                                                                           \
+    WREN_GETTER(moduleName, className, is_static, propertyName);                            \
+    WREN_SETTER(moduleName, className, is_static, propertyName);                            \
+}                                                                                           \
+while (0)
+
+#endif /* WREN_PROPERTY */
+
+// TODO: WREN_INDEX
+
+// TODO: WREN_ADD
+// TODO: WREN_SUB
+// TODO: WREN_MUL
+// TODO: WREN_DIV
 
 #ifndef WREN_CODE
 #define WREN_CODE(text) do          \
@@ -1654,7 +1723,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->node_alloc_mark = context->node_alloc_base;
 
     #ifndef WRENCH_SOURCE_CODE_BUFFER_SIZE
-    #define WRENCH_SOURCE_CODE_BUFFER_SIZE (1024 * 1024 * 1)
+    #define WRENCH_SOURCE_CODE_BUFFER_SIZE (1024 * 1024 * 2)
     #endif
     context->source_code_alloc_base = (char*)wrench_malloc(WRENCH_SOURCE_CODE_BUFFER_SIZE);
 

@@ -175,7 +175,7 @@ static void file_File_putc(WrenVM* vm)
 
         default:
         {
-            wrenSetSlotString(vm, 0, "Invalid type for argument 1 of File.putc");
+            wrenSetSlotString(vm, 0, "Invalid type for arg 1 of File.putc");
             wrenAbortFiber(vm, 0);
         }
         break;
@@ -214,6 +214,23 @@ static void file_File_flush(WrenVM* vm)
  * ~~ [ (un)hook ] ~~ *
 --------------------------------------------------------------------------------
 */
+
+#if WRENCH_FILE_EXTENDED
+    /*
+     * Enable user extension of stdlib modules.
+     */
+    #include <file_ex.inl>
+#else
+    static bool fileWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static void fileWrenQuitEx(void)
+    {
+        //
+    }
+#endif /* WRENCH_FILE_EXTENDED */
 
 WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 {
@@ -373,10 +390,15 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
         WREN_END_CLASS();
     }
 
+    if (!fileWrenInitEx(vm))
+    {
+        return false;
+    }
+
     return wrenEndModule(vm);
 }
 
 WRENCH_EXPORT void fileWrenQuit(void)
 {
-    //
+    fileWrenQuitEx();
 }
