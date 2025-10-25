@@ -652,6 +652,9 @@ typedef struct WrenchClass
     WrenchMethod* method_head;
     WrenchMethod* method_tail;
 
+    // Avoiding O(n^2) method iteration.
+    WrenchMethod* last_accessed_method;
+
 //  struct WrenchModule* module;
 
     const char* name;
@@ -667,6 +670,9 @@ typedef struct WrenchModule
 
     WrenchClass* class_head;
     WrenchClass* class_tail;
+
+    // Avoiding O(n^2) class iteration.
+    WrenchClass* last_accessed_class;
 
     const char* name;
     const char* source;
@@ -689,6 +695,9 @@ typedef struct WrenchContext
     WrenchModule* module_head;
     WrenchModule* module_tail;
 
+    // Avoiding O(n^2) module iteration.
+    WrenchModule* last_accessed_module;
+
     char* node_alloc_base;
     char* node_alloc_end;
     char* node_alloc_mark;
@@ -696,9 +705,6 @@ typedef struct WrenchContext
     char* source_code_alloc_base;
     char* source_code_alloc_end;
     char* source_code_alloc_mark;
-
-    // Avoiding O(n^2) module iteration.
-    WrenchModule* last_accessed_module;
 
     WrenchModule* module_being_built;
     char* module_builder_base;
@@ -721,6 +727,25 @@ static WrenchMethod* wrenchGetMethod(WrenchContext* context, WrenchClass* klass,
 {
     wrench_assert(klass != NULL, "%i %s", (int)is_static, signature);
 
+    if (klass->last_accessed_method != NULL)
+    {
+        if (previous == NULL && wrench_strcmp(signature, klass->last_accessed_method->signature) == 0)
+        {
+            return klass->last_accessed_method;
+        }
+
+        if (klass->last_accessed_method->next != NULL && wrench_strcmp(signature, klass->last_accessed_method->next->signature) == 0)
+        {
+            if (previous != NULL)
+            {
+                *previous = klass->last_accessed_method;
+            }
+
+            klass->last_accessed_method = klass->last_accessed_method->next;
+            return klass->last_accessed_method;
+        }
+    }
+
     WrenchMethod* node = klass->method_head;
     WrenchMethod* prev = NULL;
 
@@ -733,6 +758,7 @@ static WrenchMethod* wrenchGetMethod(WrenchContext* context, WrenchClass* klass,
                 *previous = prev;
             }
 
+            klass->last_accessed_method = node;
             return node;
         }
 
@@ -752,6 +778,25 @@ static WrenchClass* wrenchGetClass(WrenchContext* context, WrenchModule* module,
 {
     wrench_assert(module != NULL, "%s", name);
 
+    if (module->last_accessed_class != NULL)
+    {
+        if (previous == NULL && wrench_strcmp(name, module->last_accessed_class->name) == 0)
+        {
+            return module->last_accessed_class;
+        }
+
+        if (module->last_accessed_class->next != NULL && wrench_strcmp(name, module->last_accessed_class->next->name) == 0)
+        {
+            if (previous != NULL)
+            {
+                *previous = module->last_accessed_class;
+            }
+
+            module->last_accessed_class = module->last_accessed_class->next;
+            return module->last_accessed_class;
+        }
+    }
+
     WrenchClass* node = module->class_head;
     WrenchClass* prev = NULL;
 
@@ -764,6 +809,7 @@ static WrenchClass* wrenchGetClass(WrenchContext* context, WrenchModule* module,
                 *previous = prev;
             }
 
+            module->last_accessed_class = node;
             return node;
         }
 
@@ -830,6 +876,11 @@ static WrenchModule* wrenchGetModule(WrenchContext* context, const char* name, W
 
 static void wrenchUnlinkMethod(WrenchContext* context, WrenchClass* klass, WrenchMethod* method, WrenchMethod* previous)
 {
+    if (klass->last_accessed_method == method)
+    {
+        klass->last_accessed_method = NULL;
+    }
+
     if (previous != NULL)
     {
         previous->next = method->next;
@@ -848,6 +899,11 @@ static void wrenchUnlinkMethod(WrenchContext* context, WrenchClass* klass, Wrenc
 
 static void wrenchUnlinkClass(WrenchContext* context, WrenchModule* module, WrenchClass* klass, WrenchClass* previous)
 {
+    if (module->last_accessed_class == klass)
+    {
+        module->last_accessed_class = NULL;
+    }
+
     if (previous != NULL)
     {
         previous->next = klass->next;
@@ -2608,7 +2664,7 @@ WRENCH_IMPL(WrenForeignMethodFn, DefaultBindForeignMethod, (WrenVM* vm, const ch
     WrenForeignMethodFn function = method->method;
     wrench_assert(function != NULL, "%s %s %i %s", moduleName, className, (int)is_static, signature);
 
-    if (1) // Unlink to reduce search space for the next bind operation.
+    if (0) // Unlink to reduce search space for the next bind operation.
     {
         // TODO: Flags to control this behavior (SetUnlinkMethodOnBind).
         wrenchUnlinkMethod(context, klass, method, previous_method);
