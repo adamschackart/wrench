@@ -96,7 +96,7 @@ typedef void (*wrenLibraryQuitFn)(void);
         return false;                                                   \
     }                                                                   \
 }                                                                       \
-while (0)                                                               \
+while (0)
 
 #endif /* WREN_BEGIN_CLASS_EX */
 
@@ -115,7 +115,7 @@ while (0)                                                               \
         return false;           \
     }                           \
 }                               \
-while (0)                       \
+while (0)
 
 #endif /* WREN_END_CLASS */
 
@@ -216,12 +216,88 @@ while (0)
 
 #endif /* WREN_PROPERTY */
 
-// TODO: WREN_INDEX
+#define _wren_index1 "[index]"
+#define _wren_index2 "[x, y]"
+#define _wren_index3 "[x, y, z]"
+#define _wren_index4 "[x, y, z, w]"
 
-// TODO: WREN_ADD
-// TODO: WREN_SUB
-// TODO: WREN_MUL
-// TODO: WREN_DIV
+#define _wren_index_signature1 "[_]"
+#define _wren_index_signature2 "[_,_]"
+#define _wren_index_signature3 "[_,_,_]"
+#define _wren_index_signature4 "[_,_,_,_]"
+
+#ifndef WREN_INDEX_GETTER_EX
+#define WREN_INDEX_GETTER_EX(moduleName, className, is_static, arity, func) do                              \
+{                                                                                                           \
+    if (!wrenCode(vm, "foreign " _wren_static_ ## is_static _wren_index ## arity "\n"))                     \
+    {                                                                                                       \
+        return 0;                                                                                           \
+    }                                                                                                       \
+                                                                                                            \
+    if (!wrenRegisterMethod(vm, #moduleName, #className, is_static, _wren_index_signature ## arity, func))  \
+    {                                                                                                       \
+        return 0;                                                                                           \
+    }                                                                                                       \
+}                                                                                                           \
+while (0)
+
+#endif /* WREN_INDEX_GETTER_EX */
+
+#ifndef WREN_INDEX_GETTER
+#define WREN_INDEX_GETTER(moduleName, className, is_static, arity)                                                              \
+                                                                                                                                \
+    WREN_INDEX_GETTER_EX(moduleName, className, is_static, arity, moduleName ## _ ## className ## _ ## index ## arity ## _get)  \
+
+#endif /* WREN_INDEX_GETTER */
+
+#ifndef WREN_INDEX_SETTER_EX
+#define WREN_INDEX_SETTER_EX(moduleName, className, is_static, arity, func) do                                      \
+{                                                                                                                   \
+    if (!wrenCode(vm, "foreign " _wren_static_ ## is_static _wren_index ## arity "=(value)\n"))                     \
+    {                                                                                                               \
+        return 0;                                                                                                   \
+    }                                                                                                               \
+                                                                                                                    \
+    if (!wrenRegisterMethod(vm, #moduleName, #className, is_static, _wren_index_signature ## arity "=(_)", func))   \
+    {                                                                                                               \
+        return 0;                                                                                                   \
+    }                                                                                                               \
+}                                                                                                                   \
+while (0)
+
+#endif /* WREN_INDEX_SETTER_EX */
+
+#ifndef WREN_INDEX_SETTER
+#define WREN_INDEX_SETTER(moduleName, className, is_static, arity)                                                              \
+                                                                                                                                \
+    WREN_INDEX_SETTER_EX(moduleName, className, is_static, arity, moduleName ## _ ## className ## _ ## index ## arity ## _set)  \
+
+#endif /* WREN_INDEX_SETTER */
+
+#ifndef WREN_INDEX_PROPERTY_EX
+#define WREN_INDEX_PROPERTY_EX(moduleName, className, is_static, arity, getter, setter) do  \
+{                                                                                           \
+    WREN_INDEX_GETTER_EX(moduleName, className, is_static, arity, getter);                  \
+    WREN_INDEX_SETTER_EX(moduleName, className, is_static, arity, setter);                  \
+}                                                                                           \
+while (0)
+
+#endif /* WREN_INDEX_PROPERTY_EX */
+
+#ifndef WREN_INDEX_PROPERTY
+#define WREN_INDEX_PROPERTY(moduleName, className, is_static, arity) do \
+{                                                                       \
+    WREN_INDEX_GETTER(moduleName, className, is_static, arity);         \
+    WREN_INDEX_SETTER(moduleName, className, is_static, arity);         \
+}                                                                       \
+while (0)
+
+#endif /* WREN_INDEX_PROPERTY */
+
+// TODO: WREN_ADD(_EX)
+// TODO: WREN_SUB(_EX)
+// TODO: WREN_MUL(_EX)
+// TODO: WREN_DIV(_EX)
 
 #ifndef WREN_CODE
 #define WREN_CODE(text) do          \

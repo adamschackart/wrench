@@ -5,6 +5,7 @@
 
 #define WRENCH_IMPLEMENTATION
 #include <image.h>
+#include <vector.h>
 
 #define STBI_MALLOC wrench_malloc
 #define STBI_REALLOC wrench_realloc
@@ -35,6 +36,8 @@
 
 static void image_Image_ctor(WrenVM* vm)
 {
+    /* TODO: Lower-level C image reallocation function that we can re-use elsewhere.
+     */
     const int width = wrenGetSlotInt(vm, 1);
     const int height = wrenGetSlotInt(vm, 2);
     const int color_channels = wrenGetSlotInt(vm, 3);
@@ -245,6 +248,292 @@ static void image_Image_bytesPerChannel_get(WrenVM* vm)
     wrenSetSlotInt(vm, 0, self->bytes_per_channel);
 }
 
+static void image_Image_index2_get(WrenVM* vm)
+{
+    char error[1024 * 4];
+
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrench_assert(self->pixels != NULL, "invalid image");
+
+    int x = wrenGetSlotInt(vm, 1);
+    int y = wrenGetSlotInt(vm, 2);
+
+    if (x < 0 || y < 0 || x >= self->width || y >= self->height)
+    {
+        wrench_snprintf(error, sizeof(error), "Image%ix%i[%i, %i]", self->width, self->height, x, y);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    // TODO: if (image_y_up) y = self->height - y - 1;
+
+    switch (self->bytes_per_channel)
+    {
+        case sizeof(uint8_t):
+        {
+            switch (self->color_channels)
+            {
+                case 1:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 3:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 4:
+                {
+                    wrenSetSlotInt(vm, 0, ((int32_t*)self->pixels)[y * self->width + x]);
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "%i", self->color_channels);
+                }
+                break;
+            }
+        }
+        break;
+
+        case sizeof(uint16_t):
+        {
+            switch (self->color_channels)
+            {
+                case 1:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 3:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 4:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "%i", self->color_channels);
+                }
+                break;
+            }
+        }
+        break;
+
+        case sizeof(float):
+        {
+            switch (self->color_channels)
+            {
+                case 1:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 3:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 4:
+                {
+                    // TODO: vector_FltVector_alloc, for small block allocator.
+                    float* elements = (float*)wrench_malloc(sizeof(float[4]));
+
+                    if (elements == NULL)
+                    {
+                        wrenSetSlotString(vm, 0, "Out of memory! Failed to allocate FltVector of size 4.");
+                        wrenAbortFiber(vm, 0);
+
+                        return;
+                    }
+
+                    for (int i = 0; i < 4; i++)
+                    {
+                        elements[i] = ((float*)self->pixels)[y * self->width * 4 + x * 4 + i];
+                    }
+
+                    // XXX: This is slow - should use a WrenHandle.
+                    wrenGetVariable(vm, "vector", "FltVector", 0);
+
+                    vector_FltVector* rgba = (vector_FltVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_FltVector));
+                    WRENCH_SET_MAGIC_TAG(rgba, vector, FltVector);
+
+                    rgba->elements = elements;
+                    rgba->dimensions = 4;
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "%i", self->color_channels);
+                }
+                break;
+            }
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "%i", self->bytes_per_channel);
+        }
+        break;
+    }
+}
+
+static void image_Image_index2_set(WrenVM* vm)
+{
+    char error[1024 * 4];
+
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrench_assert(self->pixels != NULL, "invalid image");
+
+    int x = wrenGetSlotInt(vm, 1);
+    int y = wrenGetSlotInt(vm, 2);
+
+    if (x < 0 || y < 0 || x >= self->width || y >= self->height)
+    {
+        wrench_snprintf(error, sizeof(error), "Image%ix%i[%i, %i]", self->width, self->height, x, y);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    // TODO: if (image_y_up) y = self->height - y - 1;
+
+    switch (self->bytes_per_channel)
+    {
+        case sizeof(uint8_t):
+        {
+            switch (self->color_channels)
+            {
+                case 1:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 3:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 4:
+                {
+                    ((int32_t*)self->pixels)[y * self->width + x] = wrenGetSlotInt(vm, 3);
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "%i", self->color_channels);
+                }
+                break;
+            }
+        }
+        break;
+
+        case sizeof(uint16_t):
+        {
+            switch (self->color_channels)
+            {
+                case 1:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 3:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 4:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "%i", self->color_channels);
+                }
+                break;
+            }
+        }
+        break;
+
+        case sizeof(float):
+        {
+            switch (self->color_channels)
+            {
+                case 1:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 3:
+                {
+                    wrench_assert(0, "TODO");
+                }
+                break;
+
+                case 4:
+                {
+                    vector_FltVector* rgba = (vector_FltVector*)wrenGetSlotForeign(vm, 3);
+                    WRENCH_CHECK_MAGIC_TAG(rgba, vector, FltVector);
+
+                    wrench_assert(rgba->dimensions == 4, "FltVector%i", (int)rgba->dimensions);
+                    wrench_assert(rgba->elements != NULL, "");
+
+                    for (int i = 0; i < 4; i++)
+                    {
+                        ((float*)self->pixels)[y * self->width * 4 + x * 4 + i] = rgba->elements[i];
+                    }
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "%i", self->color_channels);
+                }
+                break;
+            }
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "%i", self->bytes_per_channel);
+        }
+        break;
+    }
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -293,8 +582,7 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
 
             // TODO: toString
 
-            // TODO: [x, y]
-            // TODO: [x, y]=
+            WREN_INDEX_PROPERTY(image, Image, false, 2);
 
             WREN_CODE("static MONO { 1 }");
             WREN_CODE("static RGB { 3 }");
