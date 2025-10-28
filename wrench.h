@@ -705,10 +705,125 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #endif
 #endif /* WRENCH_DEBUG */
 
+/* ===== [ small-block allocator ] ========================================== */
+
+/* From "Fast Efficient Fixed-Size Memory Pool: No Loops and No Overhead" by Ben Kenwright.
+ */
+typedef struct WrenchMemoryPool
+{
+    size_t num_blocks;
+    size_t block_size;
+    size_t num_free_blocks;
+    size_t num_init;
+    uint8_t* base;
+    uint8_t* next;
+}
+WrenchMemoryPool;
+
+static bool wrenchMemoryPoolInit(WrenchMemoryPool* pool, size_t block_size, size_t num_blocks)
+{
+    wrench_assert(block_size >= sizeof(size_t), "%u", (uint32_t)block_size);
+
+    pool->num_blocks = num_blocks;
+    pool->block_size = block_size;
+    pool->num_free_blocks = num_blocks;
+    pool->num_init = 0;
+    pool->base = (uint8_t*)wrench_malloc(block_size * num_blocks);
+    pool->next = pool->base;
+
+    return pool->base != NULL;
+}
+
+static void wrenchMemoryPoolFree(WrenchMemoryPool* pool)
+{
+    wrench_free(pool->base);
+}
+
+static uint8_t* wrenchBlockAddressFromIndex(WrenchMemoryPool* pool, const size_t i)
+{
+    return (pool->base + (i * pool->block_size));
+}
+
+static size_t wrenchBlockIndexFromAddress(WrenchMemoryPool* pool, const uint8_t* p)
+{
+    return (((size_t)(p - pool->base)) / pool->block_size);
+}
+
+static bool wrenchIsBlock(WrenchMemoryPool* pool, void* p)
+{
+    return (uint8_t*)p >= pool->base && (uint8_t*)p < pool->base + pool->block_size * pool->num_blocks;
+}
+
+static void* wrenchBlockAlloc(WrenchMemoryPool* pool)
+{
+    void* ret;
+
+    if (pool->num_init < pool->num_blocks)
+    {
+        size_t* p = (size_t*)wrenchBlockAddressFromIndex(pool, pool->num_init);
+
+        *p = pool->num_init + 1;
+        pool->num_init++;
+    }
+
+    if (pool->num_free_blocks > 0)
+    {
+        ret = (void*)pool->next;
+        pool->num_free_blocks--;
+
+        if (pool->num_free_blocks != 0)
+        {
+            pool->next = wrenchBlockAddressFromIndex(pool, *((size_t*)pool->next));
+        }
+        else
+        {
+            pool->next = NULL;
+        }
+    }
+    else
+    {
+        if (1)
+        {
+            ret = wrench_malloc(pool->block_size);
+        }
+        else
+        {
+            ret = NULL;
+        }
+    }
+
+    return ret;
+}
+
+static void wrenchBlockFree(WrenchMemoryPool* pool, void* p)
+{
+    if (wrenchIsBlock(pool, p))
+    {
+        if (pool->next != NULL)
+        {
+            (*(size_t*)p) = wrenchBlockIndexFromAddress(pool, pool->next);
+            pool->next = (uint8_t*)p;
+        }
+        else
+        {
+            *((size_t*)p) = pool->num_blocks;
+            pool->next = (uint8_t*)p;
+        }
+
+        pool->num_free_blocks++;
+    }
+    else
+    {
+        wrench_free(p);
+    }
+}
+
 /* ===== [ context & nodes ] ================================================ */
 
 typedef struct WrenchMethod
 {
+    /* TODO: Order struct members based on frequency of use + minimizing padding.
+     */
 //  struct WrenchMethod* prev;
     struct WrenchMethod* next;
 
@@ -722,6 +837,8 @@ WrenchMethod;
 
 typedef struct WrenchClass
 {
+    /* TODO: Order struct members based on frequency of use + minimizing padding.
+     */
 //  struct WrenchClass* prev;
     struct WrenchClass* next;
 
@@ -741,6 +858,8 @@ WrenchClass;
 
 typedef struct WrenchModule
 {
+    /* TODO: Order struct members based on frequency of use + minimizing padding.
+     */
 //  struct WrenchModule* prev;
     struct WrenchModule* next;
 
@@ -759,6 +878,8 @@ WrenchModule;
 
 typedef struct WrenchContext
 {
+    /* TODO: Order struct members based on frequency of use + minimizing padding.
+     */
     struct WrenchContext* prev;
     struct WrenchContext* next;
 
@@ -788,6 +909,8 @@ typedef struct WrenchContext
 
     wrenFileReadFn file_read_callback;
     wrenFileFreeFn file_free_callback;
+
+    WrenchMemoryPool memory_pool;
 
     WrenVM* vm;
     void* userdata[16];
@@ -1870,6 +1993,22 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->source_code_alloc_end = context->source_code_alloc_base + WRENCH_SOURCE_CODE_BUFFER_SIZE;
     context->source_code_alloc_mark = context->source_code_alloc_base;
 
+    #ifndef WRENCH_MEMORY_POOL_BLOCK_SIZE
+    #define WRENCH_MEMORY_POOL_BLOCK_SIZE 16
+    #endif
+    #ifndef WRENCH_MEMORY_POOL_BLOCK_COUNT
+    #define WRENCH_MEMORY_POOL_BLOCK_COUNT ((1024 * 1024 * 1) / (WRENCH_MEMORY_POOL_BLOCK_SIZE))
+    #endif
+
+    if (!wrenchMemoryPoolInit(&context->memory_pool, WRENCH_MEMORY_POOL_BLOCK_SIZE, WRENCH_MEMORY_POOL_BLOCK_COUNT))
+    {
+        wrench_free(context->source_code_alloc_base);
+        wrench_free(context->node_alloc_base);
+        wrench_free(context);
+
+        return NULL;
+    }
+
     /* Link.
      */
     if (wrench_context_head == NULL && wrench_context_tail == NULL)
@@ -1947,6 +2086,7 @@ static void wrenchFreeContext(WrenchContext* context)
         wrench_primary_context = NULL;
     }
 
+    wrenchMemoryPoolFree(&context->memory_pool);
     wrenchFreeCommandLine(context);
 
     wrench_free(context->source_code_alloc_base);
@@ -2629,17 +2769,53 @@ WRENCH_IMPL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value))
     wrenSetSlotInt(vm, slot, (int)value);
 }
 
-WRENCH_IMPL(void*, DefaultReallocate, (void* ptr, size_t newSize, void* userData))
+WRENCH_IMPL(void*, DefaultReallocate, (void* old_memory, size_t new_size, void* userdata))
 {
-    // TODO: Put a fixed-size small-block allocator in front of this.
-
-    if (newSize == 0)
+    if (userdata != NULL)
     {
-        wrench_free(ptr);
-        return NULL;
+        WrenchMemoryPool* pool = &((WrenchContext*)userdata)->memory_pool;
+
+        if (new_size == 0)
+        {
+            wrenchBlockFree(pool, old_memory);
+            return NULL;
+        }
+
+        if (old_memory == NULL && new_size <= pool->block_size)
+        {
+            return wrenchBlockAlloc(pool);
+        }
+
+        if (wrenchIsBlock(pool, old_memory))
+        {
+            if (new_size > pool->block_size)
+            {
+                void* new_memory = wrench_malloc(new_size);
+
+                if (new_memory != NULL)
+                {
+                    wrench_memcpy(new_memory, old_memory, pool->block_size);
+                }
+
+                wrenchBlockFree(pool, old_memory);
+                return new_memory;
+            }
+            else
+            {
+                return old_memory;
+            }
+        }
+    }
+    else
+    {
+        if (new_size == 0)
+        {
+            wrench_free(old_memory);
+            return NULL;
+        }
     }
 
-    return wrench_realloc(ptr, newSize);
+    return wrench_realloc(old_memory, new_size);
 }
 
 WRENCH_IMPL(const char*, DefaultResolveModule, (WrenVM* vm, const char* importer, const char* name))
@@ -2814,6 +2990,8 @@ WRENCH_IMPL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
         break;
     }
 }
+
+/* ===== [ entry point ] ==================================================== */
 
 #if defined(WRENCH_MAIN)
 
