@@ -15,14 +15,22 @@ extern "C" {
 } /* extern "C" */
 #endif
 
+#if !WRENCH_NO_CSTDLIB
+    /*
+     * For uint8_t.
+     */
+    #include <stdint.h>
+    /*
+     * For FILE.
+     */
+    #include <stdio.h>
+#endif
+
 /*
 ================================================================================
  * ~~ [ types ] ~~ *
 --------------------------------------------------------------------------------
 */
-
-// Avoid including <stdint.h>.
-typedef unsigned char uint8_t;
 
 typedef void* (*wrenFileReadFn)(WrenVM* vm, const char* name, size_t* size);
 typedef void  (*wrenFileFreeFn)(WrenVM* vm, void* data, size_t size);
@@ -370,6 +378,10 @@ WRENCH_DECL(bool, SetCommandLine, (WrenVM* vm, int argc, char** argv));
  */
 WRENCH_DECL(const char*, GetModuleSource, (WrenVM* vm, const char* name));
 
+/* Print a module's source code in a human-readable format.
+ */
+WRENCH_DECL(int, PrintModuleSource, (WrenVM* vm, const char* name, FILE* stream, bool indent, bool strip_comments));
+
 /* Main EXE path (prefixed onto file paths passed into `wrenLoadSourceFile`).
  */
 WRENCH_DECL(const char*, GetBasePath, (WrenVM* vm));
@@ -474,13 +486,11 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 
 /* ===== [ standard library ] =============================================== */
 
-#ifndef WRENCH_NO_CSTDLIB
+#if !WRENCH_NO_CSTDLIB
     #include <assert.h>
     #include <float.h>
     #include <limits.h>
     #include <math.h>
-    #include <stdint.h>
-    #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
 #endif
@@ -526,6 +536,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_fprintf
 #define wrench_fprintf fprintf
+#endif
+#ifndef wrench_fputc
+#define wrench_fputc fputc
+#endif
+#ifndef wrench_fputs
+#define wrench_fputs fputs
 #endif
 #ifndef wrench_fread
 #define wrench_fread fread
@@ -713,8 +729,10 @@ typedef struct WrenchMemoryPool
 {
     size_t num_blocks;
     size_t block_size;
+
     size_t num_free_blocks;
-    size_t num_init;
+    size_t num_init_blocks;
+
     uint8_t* base;
     uint8_t* next;
 }
@@ -727,7 +745,7 @@ static bool wrenchMemoryPoolInit(WrenchMemoryPool* pool, size_t block_size, size
     pool->num_blocks = num_blocks;
     pool->block_size = block_size;
     pool->num_free_blocks = num_blocks;
-    pool->num_init = 0;
+    pool->num_init_blocks = 0;
     pool->base = (uint8_t*)wrench_malloc(block_size * num_blocks);
     pool->next = pool->base;
 
@@ -758,12 +776,12 @@ static void* wrenchBlockAlloc(WrenchMemoryPool* pool)
 {
     void* ret;
 
-    if (pool->num_init < pool->num_blocks)
+    if (pool->num_init_blocks < pool->num_blocks)
     {
-        size_t* p = (size_t*)wrenchBlockAddressFromIndex(pool, pool->num_init);
+        size_t* p = (size_t*)wrenchBlockAddressFromIndex(pool, pool->num_init_blocks);
 
-        *p = pool->num_init + 1;
-        pool->num_init++;
+        *p = pool->num_init_blocks + 1;
+        pool->num_init_blocks++;
     }
 
     if (pool->num_free_blocks > 0)
@@ -1364,6 +1382,103 @@ static const char* wrenchGetModuleSource(WrenchContext* context, const char* nam
     {
         return NULL;
     }
+}
+
+static int wrenchPrintModuleSource(WrenchContext* context, const char* name, FILE* stream, bool indent, bool strip_comments)
+{
+    char error[1024 * 4];
+    const char* source = wrenchGetModuleSource(context, name);
+
+    wrench_assert(!strip_comments, "TODO strip comments");
+
+    if (source == NULL)
+    {
+        wrench_snprintf(error, sizeof(error), "module \"%s\" source not found", name);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return -1;
+    }
+
+    int indentation_level = 0;
+    int counter = 0;
+
+    while (*source != '\0')
+    {
+        switch (*source)
+        {
+            /* TODO: Error handling for stream write.
+             */
+            #define WRITE() do                      \
+            {                                       \
+                wrench_fputc(*source++, stream);    \
+                counter++;                          \
+            }                                       \
+            while (0)
+
+            case '\0':
+            {
+                wrench_assert(0, "");
+            }
+            break;
+
+            /* TODO: If we're inside a comment here, skip these chars.
+             */
+            case '{':
+            {
+                indentation_level++;
+                WRITE();
+            }
+            break;
+
+            case '}':
+            {
+                indentation_level--;
+                WRITE();
+            }
+            break;
+
+            case '\n':
+            {
+                WRITE();
+
+                if (indent)
+                {
+                    if (*source == '}') // XXX HACK
+                    {
+                        indentation_level--;
+
+                        for (int i = 0; i < indentation_level; i++)
+                        {
+                            wrench_fputs("    ", stream);
+                            counter += 4;
+                        }
+
+                        WRITE();
+                    }
+                    else
+                    {
+                        for (int i = 0; i < indentation_level; i++)
+                        {
+                            wrench_fputs("    ", stream);
+                            counter += 4;
+                        }
+                    }
+                }
+            }
+            break;
+
+            default:
+            {
+                WRITE();
+            }
+            break;
+
+            #undef WRITE
+        }
+    }
+
+    wrench_assert(indentation_level == 0, "%i", indentation_level);
+    return counter;
 }
 
 static const char* wrenchGetBasePath(WrenchContext* context)
@@ -2102,6 +2217,14 @@ static size_t wrenchGlobalInitFuncCount;
 static wrenLibraryQuitFn wrenchGlobalQuitFunc[16];
 static size_t wrenchGlobalQuitFuncCount;
 
+/* Standard library modules are normally DLLs, but we can include them inline.
+ */
+#if WRENCH_STDLIB
+    #include <file.cpp>
+    #include <image.c>
+    #include <vector.c>
+#endif
+
 /* ===== [ public API ] ===================================================== */
 
 WRENCH_IMPL(WrenConfiguration*, GetConfig, (void))
@@ -2166,6 +2289,28 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
         }
     }
 
+    #if WRENCH_STDLIB
+    {
+        if (!fileWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+
+        if (!imageWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+
+        if (!vectorWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+    }
+    #endif /* WRENCH_STDLIB */
+
     return vm;
 }
 
@@ -2192,8 +2337,15 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
 
     // We must free the VM first, before dtors in shared libs are unmapped.
     wrenFreeVM(vm);
-
     wrenchFreeContext(context);
+
+    #if WRENCH_STDLIB
+    {
+        vectorWrenQuit();
+        imageWrenQuit();
+        fileWrenQuit();
+    }
+    #endif /* WRENCH_STDLIB */
 }
 
 WRENCH_IMPL(void, RegisterGlobalInitFunction, (wrenLibraryInitFn init))
@@ -2343,6 +2495,21 @@ WRENCH_IMPL(const char*, GetModuleSource, (WrenVM* vm, const char* name))
     else
     {
         return "";
+    }
+}
+
+WRENCH_IMPL(int, PrintModuleSource, (WrenVM* vm, const char* name, FILE* stream, bool indent, bool strip_comments))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchPrintModuleSource(context, name, stream, indent, strip_comments);
+    }
+    else
+    {
+        return -1;
     }
 }
 

@@ -3,30 +3,47 @@
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 ----------------------------------------------------------------------------- */
 
-#define WRENCH_IMPLEMENTATION
+#ifndef WRENCH_IMPLEMENTATION
+#define WRENCH_IMPLEMENTATION 1
+#endif
 #include <image.h>
 #include <vector.h>
 
-#define STBI_MALLOC wrench_malloc
-#define STBI_REALLOC wrench_realloc
-#define STBI_FREE wrench_free
+/* Image loading.
+ */
+#if !defined(STB_IMAGE_IMPLEMENTATION)
+    #define STBI_MALLOC wrench_malloc
+    #define STBI_REALLOC wrench_realloc
+    #define STBI_FREE wrench_free
 
-// More verbose error messages.
-#define STBI_FAILURE_USERMSG 1
+    // More verbose error messages.
+    #define STBI_FAILURE_USERMSG 1
 
-#define STB_IMAGE_IMPLEMENTATION 1
-#include <stb/stb_image.h>
+    #define STB_IMAGE_IMPLEMENTATION 1
+    #include <stb/stb_image.h>
+#endif
 
-#define STBIW_MALLOC wrench_malloc
-#define STBIW_REALLOC wrench_realloc
-#define STBIW_FREE wrench_free
-#define STBIW_MEMMOVE wrench_memmove
+/* Image saving.
+ */
+#if !defined(STB_IMAGE_WRITE_IMPLEMENTATION)
+    #define STBIW_MALLOC wrench_malloc
+    #define STBIW_REALLOC wrench_realloc
+    #define STBIW_FREE wrench_free
+    #define STBIW_MEMMOVE wrench_memmove
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION 1
-#include <stb/stb_image_write.h>
+    #define STB_IMAGE_WRITE_IMPLEMENTATION 1
+    #include <stb/stb_image_write.h>
+#endif
 
-//#define STB_IMAGE_RESIZE2_IMPLEMENTATION 1
-//#include <stb/stb_image_resize2.h>
+/* Image resizing.
+ */
+#if !defined(STB_IMAGE_RESIZE2_IMPLEMENTATION) && 0
+    #define STBIR_MALLOC wrench_malloc
+    #define STBIR_FREE wrench_free
+
+    #define STB_IMAGE_RESIZE2_IMPLEMENTATION 1
+    #include <stb/stb_image_resize2.h>
+#endif
 
 /*
 ================================================================================
@@ -197,7 +214,7 @@ static void image_Image_save(WrenVM* vm)
     }
     else if (wrench_strstr(filename, ".hdr") != NULL)
     {
-        if (!stbi_write_hdr(filename, self->width, self->height, self->color_channels, self->pixels))
+        if (!stbi_write_hdr(filename, self->width, self->height, self->color_channels, (const float*)self->pixels))
         {
             goto error;
         }
@@ -534,6 +551,16 @@ static void image_Image_index2_set(WrenVM* vm)
     }
 }
 
+static void image_Image_resize(WrenVM* vm)
+{
+    WRENCH_STUB();
+}
+
+static void image_Image_convert(WrenVM* vm)
+{
+    WRENCH_STUB();
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -612,8 +639,8 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             WREN_CODE("bytes { width * height * colorChannels * bytesPerChannel }");
             WREN_CODE("pitch { width * colorChannels * bytesPerChannel }");
 
-            // TODO: resize
-            // TODO: convert
+            WREN_METHOD(image, Image, false, resize, "(width, height, filter)", "(_,_,_)");
+            WREN_METHOD(image, Image, false, convert, "(colorChannels, bytesPerChannel)", "(_,_)");
         }
         WREN_END_CLASS();
     }

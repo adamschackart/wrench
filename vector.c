@@ -5,7 +5,9 @@
 --- TODO: Move to 'math' directory once we get namespace resolution sorted out.
 ----------------------------------------------------------------------------- */
 
-#define WRENCH_IMPLEMENTATION
+#ifndef WRENCH_IMPLEMENTATION
+#define WRENCH_IMPLEMENTATION 1
+#endif
 #include <vector.h>
 
 /*
@@ -60,7 +62,7 @@ static void vector_IntVector_index1_get(WrenVM* vm)
 
     const int index = wrenGetSlotInt(vm, 1);
 
-    if (index < 0 || index >= self->dimensions)
+    if (index < 0 || index >= (int)self->dimensions)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "IntVector%i[%i]", (int)self->dimensions, index);
@@ -80,7 +82,7 @@ static void vector_IntVector_index1_set(WrenVM* vm)
     const int index = wrenGetSlotInt(vm, 1);
     const int value = wrenGetSlotInt(vm, 2);
 
-    if (index < 0 || index >= self->dimensions)
+    if (index < 0 || index >= (int)self->dimensions)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "IntVector%i[%i]=%i", (int)self->dimensions, index, value);
@@ -144,7 +146,7 @@ static void vector_FltVector_index1_get(WrenVM* vm)
 
     const int index = wrenGetSlotInt(vm, 1);
 
-    if (index < 0 || index >= self->dimensions)
+    if (index < 0 || index >= (int)self->dimensions)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "FltVector%i[%i]", (int)self->dimensions, index);
@@ -164,7 +166,7 @@ static void vector_FltVector_index1_set(WrenVM* vm)
     const int index = wrenGetSlotInt(vm, 1);
     const float value = wrenGetSlotFloat(vm, 2);
 
-    if (index < 0 || index >= self->dimensions)
+    if (index < 0 || index >= (int)self->dimensions)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "FltVector%i[%i]=%f", (int)self->dimensions, index, value);
@@ -228,7 +230,7 @@ static void vector_DblVector_index1_get(WrenVM* vm)
 
     const int index = wrenGetSlotInt(vm, 1);
 
-    if (index < 0 || index >= self->dimensions)
+    if (index < 0 || index >= (int)self->dimensions)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "DblVector%i[%i]", (int)self->dimensions, index);
@@ -248,7 +250,7 @@ static void vector_DblVector_index1_set(WrenVM* vm)
     const int index = wrenGetSlotInt(vm, 1);
     const double value = wrenGetSlotDouble(vm, 2);
 
-    if (index < 0 || index >= self->dimensions)
+    if (index < 0 || index >= (int)self->dimensions)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "DblVector%i[%i]=%f", (int)self->dimensions, index, value);

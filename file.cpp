@@ -3,9 +3,12 @@
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 ----------------------------------------------------------------------------- */
 
-#define WRENCH_IMPLEMENTATION
+#ifndef WRENCH_IMPLEMENTATION
+#define WRENCH_IMPLEMENTATION 1
+#endif
 #include <file.h>
 
+// TODO: Do this in C.
 #include <filesystem>
 
 /*
