@@ -222,7 +222,9 @@ static void file_File_flush(WrenVM* vm)
     /*
      * Enable user extension of stdlib modules.
      */
+    #ifndef __FILE_EX_INL__
     #include <file_ex.inl>
+    #endif
 #else
     static bool fileWrenInitEx(WrenVM* vm)
     {
@@ -232,6 +234,16 @@ static void file_File_flush(WrenVM* vm)
     static void fileWrenQuitEx(void)
     {
         //
+    }
+
+    static bool filePathWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static bool fileFileWrenInitEx(WrenVM* vm)
+    {
+        return true;
     }
 #endif /* WRENCH_FILE_EXTENDED */
 
@@ -277,6 +289,11 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_CODE("static list(path, recursive) { list(path, recursive, true) }");
             WREN_CODE("static list(path) { list(path, false, true) }");
             WREN_CODE("static walk(path) { list(path, true, true) }");
+
+            if (!filePathWrenInitEx(vm))
+            {
+                return false;
+            }
         }
         WREN_END_CLASS();
 
@@ -389,6 +406,11 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             "}\n"
 
             )) { return false; }
+
+            if (!fileFileWrenInitEx(vm))
+            {
+                return false;
+            }
         }
         WREN_END_CLASS();
     }

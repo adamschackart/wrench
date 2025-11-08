@@ -321,13 +321,38 @@ while (0)
 
 /* ===== [ foreign type checking ] ========================================== */
 
+/* NOTE: This replaces `if (!(x is Foo)) { Fiber.abort(...) }` in Wren.
+ */
 #if WRENCH_DEBUG
     #ifndef WRENCH_MAGIC_TAG
     #define WRENCH_MAGIC_TAG const char* _magic_tag
     #endif
+
+    #ifndef WRENCH_CHECK_MAGIC_TAG
+    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) do                                                                                                                                                            \
+    {                                                                                                                                                                                                                           \
+        wrench_assert((data) != NULL, "");                                                                                                                                                                                      \
+        wrench_assert(((module_name ## _ ## class_name*)(data))->_magic_tag != NULL, "forgot to set magic tag on possible %s_%s", WRENCH_STRINGIFY(module_name), WRENCH_STRINGIFY(class_name));                                 \
+        wrench_assert(wrench_strcmp(((module_name ## _ ## class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)) == 0, "%s", ((module_name ## _ ## class_name*)(data))->_magic_tag);  \
+    }                                                                                                                                                                                                                           \
+    while (0)
+
+    #endif /* WRENCH_CHECK_MAGIC_TAG */
+
+    #ifndef WRENCH_SET_MAGIC_TAG
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((module_name ## _ ## class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)
+    #endif
 #else
     #ifndef WRENCH_MAGIC_TAG
     #define WRENCH_MAGIC_TAG
+    #endif
+
+    #ifndef WRENCH_CHECK_MAGIC_TAG
+    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) ((void)0)
+    #endif
+
+    #ifndef WRENCH_SET_MAGIC_TAG
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((void)0)
     #endif
 #endif /* WRENCH_DEBUG */
 
@@ -567,6 +592,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_memset
 #define wrench_memset memset
 #endif
+#ifndef wrench_pow
+#define wrench_pow pow
+#endif
 #ifndef wrench_putchar
 #define wrench_putchar putchar
 #endif
@@ -693,33 +721,6 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     wrench_breakpoint();                                                                            \
 }
 #endif /* wrench_assert */
-
-/* Macros for C type checking. Replaces `if (!(x is Foo)) { Fiber.abort(...) }` in Wren.
- */
-#if WRENCH_DEBUG
-    #ifndef WRENCH_CHECK_MAGIC_TAG
-    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) do                                                                                                                                                            \
-    {                                                                                                                                                                                                                           \
-        wrench_assert((data) != NULL, "");                                                                                                                                                                                      \
-        wrench_assert(((module_name ## _ ## class_name*)(data))->_magic_tag != NULL, "forgot to set magic tag on possible %s_%s", WRENCH_STRINGIFY(module_name), WRENCH_STRINGIFY(class_name));                                 \
-        wrench_assert(wrench_strcmp(((module_name ## _ ## class_name*)(data))->_magic_tag, WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)) == 0, "%s", ((module_name ## _ ## class_name*)(data))->_magic_tag);  \
-    }                                                                                                                                                                                                                           \
-    while (0)
-
-    #endif /* WRENCH_CHECK_MAGIC_TAG */
-
-    #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((module_name ## _ ## class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)
-    #endif
-#else
-    #ifndef WRENCH_CHECK_MAGIC_TAG
-    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) ((void)0)
-    #endif
-
-    #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((void)0)
-    #endif
-#endif /* WRENCH_DEBUG */
 
 /* ===== [ small-block allocator ] ========================================== */
 

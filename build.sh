@@ -11,9 +11,9 @@ fi
 
 wait
 
-cc -g -I. -Iwren/src/include -o run_wren main.c wren.o -lm -ldl &
-cc -g -I. -Iwren/src/include -std=c++17 -fPIC -shared -o file.so file.cpp wren.o -lstdc++ -lm -ldl &
-cc -g -I. -Iwren/src/include -fPIC -shared -o image.so image.c wren.o -lm -ldl &
-cc -g -I. -Iwren/src/include -fPIC -shared -o vector.so vector.c wren.o -lm -ldl &
+cc -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -o run_wren main.c wren.o -lm -ldl &
+cc -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -std=c++17 -fPIC -shared -o file.so file.cpp wren.o -lstdc++ -lm -ldl &
+cc -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o image.so image.c wren.o -lm -ldl &
+cc -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o vector.so vector.c wren.o -lm -ldl &
 
 wait

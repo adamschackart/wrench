@@ -272,7 +272,9 @@ static void vector_DblVector_index1_set(WrenVM* vm)
     /*
      * Enable user extension of stdlib modules.
      */
+    #ifndef __VECTOR_EX_INL__
     #include <vector_ex.inl>
+    #endif
 #else
     static bool vectorWrenInitEx(WrenVM* vm)
     {
@@ -282,6 +284,21 @@ static void vector_DblVector_index1_set(WrenVM* vm)
     static void vectorWrenQuitEx(void)
     {
         //
+    }
+
+    static bool vectorIntVectorWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static bool vectorFltVectorWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static bool vectorDblVectorWrenInitEx(WrenVM* vm)
+    {
+        return true;
     }
 #endif /* WRENCH_FILE_EXTENDED */
 
@@ -372,6 +389,11 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "- { fromList(toList.map { |item| -item }.toList) }\n"
 
             )) { return false; }
+
+            if (!vectorIntVectorWrenInitEx(vm))
+            {
+                return false;
+            }
         }
         WREN_END_CLASS();
 
@@ -639,6 +661,11 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "}\n"
 
             )) { return false; }
+
+            if (!vectorFltVectorWrenInitEx(vm))
+            {
+                return false;
+            }
         }
         WREN_END_CLASS();
 
@@ -837,6 +864,11 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "}\n"
 
             )) { return false; }
+
+            if (!vectorDblVectorWrenInitEx(vm))
+            {
+                return false;
+            }
         }
         WREN_END_CLASS();
     }

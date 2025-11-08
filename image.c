@@ -459,7 +459,14 @@ static void image_Image_index2_set(WrenVM* vm)
 
                 case 4:
                 {
-                    ((int32_t*)self->pixels)[y * self->width + x] = wrenGetSlotInt(vm, 3);
+                    if (0) // XXX TODO FIXME: Broken.
+                    {
+                        ((int32_t*)self->pixels)[y * self->width + x] = wrenGetSlotInt(vm, 3);
+                    }
+                    else
+                    {
+                        wrench_assert(0, "TODO");
+                    }
                 }
                 break;
 
@@ -505,40 +512,22 @@ static void image_Image_index2_set(WrenVM* vm)
 
         case sizeof(float):
         {
-            switch (self->color_channels)
+            if (self->color_channels == 1 && wrenGetSlotType(vm, 3) == WREN_TYPE_NUM)
             {
-                case 1:
+                ((float*)self->pixels)[y * self->width + x] = wrenGetSlotFloat(vm, 3);
+            }
+            else
+            {
+                vector_FltVector* rgba = (vector_FltVector*)wrenGetSlotForeign(vm, 3);
+                WRENCH_CHECK_MAGIC_TAG(rgba, vector, FltVector);
+
+                wrench_assert((int)rgba->dimensions >= self->color_channels, "FltVector%i < %i", (int)rgba->dimensions, self->color_channels);
+                wrench_assert(rgba->elements != NULL, "");
+
+                for (int i = 0; i < self->color_channels; i++)
                 {
-                    wrench_assert(0, "TODO");
+                    ((float*)self->pixels)[y * self->width * self->color_channels + x * self->color_channels + i] = rgba->elements[i];
                 }
-                break;
-
-                case 3:
-                {
-                    wrench_assert(0, "TODO");
-                }
-                break;
-
-                case 4:
-                {
-                    vector_FltVector* rgba = (vector_FltVector*)wrenGetSlotForeign(vm, 3);
-                    WRENCH_CHECK_MAGIC_TAG(rgba, vector, FltVector);
-
-                    wrench_assert(rgba->dimensions == 4, "FltVector%i", (int)rgba->dimensions);
-                    wrench_assert(rgba->elements != NULL, "");
-
-                    for (int i = 0; i < 4; i++)
-                    {
-                        ((float*)self->pixels)[y * self->width * 4 + x * 4 + i] = rgba->elements[i];
-                    }
-                }
-                break;
-
-                default:
-                {
-                    wrench_assert(0, "%i", self->color_channels);
-                }
-                break;
             }
         }
         break;
@@ -558,7 +547,218 @@ static void image_Image_resize(WrenVM* vm)
 
 static void image_Image_convert(WrenVM* vm)
 {
-    WRENCH_STUB();
+    char error[1024 * 4];
+
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    const int old_color_channels = self->color_channels;
+    const int old_bytes_per_channel = self->bytes_per_channel;
+
+    const int new_color_channels = wrenGetSlotInt(vm, 1);
+    const int new_bytes_per_channel = wrenGetSlotInt(vm, 2);
+
+    void* old_pixels = self->pixels;
+    void* new_pixels = wrench_malloc(self->width * self->height * new_color_channels * new_bytes_per_channel);
+
+    if (new_pixels != NULL)
+    {
+        // TODO: Slow!!! Should use a WrenHandle.
+        wrenGetVariable(vm, "image", "Image", 0);
+
+        image_Image* copy = (image_Image*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(image_Image));
+        WRENCH_SET_MAGIC_TAG(copy, image, Image);
+
+        copy->pixels = new_pixels;
+        copy->width = self->width;
+        copy->height = self->height;
+        copy->color_channels = new_color_channels;
+        copy->bytes_per_channel = new_bytes_per_channel;
+    }
+    else
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to allocate %ix%ix%ix%i image.",
+                self->width, self->height, new_color_channels, new_bytes_per_channel);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    if (old_color_channels == new_color_channels && old_bytes_per_channel == new_bytes_per_channel)
+    {
+        wrench_memcpy(new_pixels, old_pixels, self->width * self->height * new_color_channels * new_bytes_per_channel);
+        return;
+    }
+
+    #define C(SRC_TYPE, SRC_FORMAT, DST_TYPE, DST_FORMAT) (uint32_t)(   \
+                                                                        \
+        (((uint32_t)(SRC_TYPE)   & 0xFF) << 24) |                       \
+        (((uint32_t)(SRC_FORMAT) & 0xFF) << 16) |                       \
+        (((uint32_t)(DST_TYPE)   & 0xFF) <<  8) |                       \
+        (((uint32_t)(DST_FORMAT) & 0xFF) <<  0) )                       \
+
+    const uint32_t mode = C(old_bytes_per_channel, old_color_channels, new_bytes_per_channel, new_color_channels);
+
+    switch (mode)
+    {
+        // float RGBA -> byte RGBA (HDR -> LDR)
+        case C(4, 4, 1, 4):
+        {
+            uint8_t* dst = (uint8_t*)new_pixels;
+
+            float* end = (float*)old_pixels + self->width * self->height * 4;
+            float* src = (float*)old_pixels;
+
+            for (; src < end; src += 4, dst += 4)
+            {
+                float z;
+
+                for (size_t i = 0; i < 3; i++)
+                {
+                    z = (float)wrench_pow(src[i] * stbi__h2l_scale_i, stbi__h2l_gamma_i) * 255 + 0.5f;
+                    if (z < 0.0f) z = 0.0f;
+                    if (z > 255.0f) z = 255.0f;
+                    dst[i] = (uint8_t)stbi__float2int(z);
+                }
+
+                z = src[3] * 255 + 0.5f;
+                if (z < 0.0f) z = 0.0f;
+                if (z > 255.0f) z = 255.0f;
+                dst[3] = (uint8_t)stbi__float2int(z);
+            }
+        }
+        break;
+
+        // byte RGBA -> float RGBA (LDR -> HDR)
+        case C(1, 4, 4, 4):
+        {
+            float* dst = (float*)new_pixels;
+
+            uint8_t* end = (uint8_t*)old_pixels + self->width * self->height * 4;
+            uint8_t* src = (uint8_t*)old_pixels;
+
+            for (; src < end; src += 4, dst += 4)
+            {
+                dst[0] = (float)(wrench_pow(src[0] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+                dst[1] = (float)(wrench_pow(src[1] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+                dst[2] = (float)(wrench_pow(src[2] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+
+                dst[3] = src[3] / 255.0f;
+            }
+        }
+        break;
+
+        // float RGB -> byte RGB (HDR -> LDR)
+        case C(4, 3, 1, 3):
+        {
+            uint8_t* dst = (uint8_t*)new_pixels;
+
+            float* end = (float*)old_pixels + self->width * self->height * 3;
+            float* src = (float*)old_pixels;
+
+            for (; src < end; src += 3, dst += 3)
+            {
+                for (size_t i = 0; i < 3; i++)
+                {
+                    float z = (float)wrench_pow(src[i] * stbi__h2l_scale_i, stbi__h2l_gamma_i) * 255 + 0.5f;
+                    if (z < 0.0f) z = 0.0f;
+                    if (z > 255.0f) z = 255.0f;
+                    dst[i] = (uint8_t)stbi__float2int(z);
+                }
+            }
+        }
+        break;
+
+        // byte RGB -> float RGB (LDR -> HDR)
+        case C(1, 3, 4, 3):
+        {
+            float* dst = (float*)new_pixels;
+
+            uint8_t* end = (uint8_t*)old_pixels + self->width * self->height * 3;
+            uint8_t* src = (uint8_t*)old_pixels;
+
+            for (; src < end; src += 3, dst += 3)
+            {
+                dst[0] = (float)(wrench_pow(src[0] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+                dst[1] = (float)(wrench_pow(src[1] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+                dst[2] = (float)(wrench_pow(src[2] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+            }
+        }
+        break;
+
+        // byte RGB -> byte RGBA
+        case C(1, 3, 1, 4):
+        {
+            uint8_t* dst = (uint8_t*)new_pixels;
+
+            uint8_t* end = (uint8_t*)old_pixels + self->width * self->height * 3;
+            uint8_t* src = (uint8_t*)old_pixels;
+
+            for (; src < end; src += 3, dst += 4)
+            {
+                wrench_memcpy(dst, src, sizeof(uint8_t[3]));
+                dst[3] = 0xFF;
+            }
+        }
+        break;
+
+        // byte RGBA -> byte RGB
+        case C(1, 4, 1, 3):
+        {
+            uint8_t* dst = (uint8_t*)new_pixels;
+
+            uint8_t* end = (uint8_t*)old_pixels + self->width * self->height * 4;
+            uint8_t* src = (uint8_t*)old_pixels;
+
+            for (; src < end; src += 4, dst += 3)
+            {
+                wrench_memcpy(dst, src, sizeof(uint8_t[3]));
+            }
+        }
+        break;
+
+        // float RGB -> float RGBA
+        case C(4, 3, 4, 4):
+        {
+            float* dst = (float*)new_pixels;
+
+            float* end = (float*)old_pixels + self->width * self->height * 3;
+            float* src = (float*)old_pixels;
+
+            for (; src < end; src += 3, dst += 4)
+            {
+                wrench_memcpy(dst, src, sizeof(float[3]));
+                dst[3] = 1.0f;
+            }
+        }
+        break;
+
+        // float RGBA -> float RGB
+        case C(4, 4, 4, 3):
+        {
+            float* dst = (float*)new_pixels;
+
+            float* end = (float*)old_pixels + self->width * self->height * 4;
+            float* src = (float*)old_pixels;
+
+            for (; src < end; src += 4, dst += 3)
+            {
+                wrench_memcpy(dst, src, sizeof(float[3]));
+            }
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "TODO: %i %i -> %i %i", old_color_channels, old_bytes_per_channel,
+                                                    new_color_channels, new_bytes_per_channel);
+        }
+        break;
+    }
+
+    #undef C
 }
 
 /*
@@ -571,7 +771,9 @@ static void image_Image_convert(WrenVM* vm)
     /*
      * Enable user extension of stdlib modules.
      */
+    #ifndef __IMAGE_EX_INL__
     #include <image_ex.inl>
+    #endif
 #else
     static bool imageWrenInitEx(WrenVM* vm)
     {
@@ -581,6 +783,11 @@ static void image_Image_convert(WrenVM* vm)
     static void imageWrenQuitEx(void)
     {
         //
+    }
+
+    static bool imageImageWrenInitEx(WrenVM* vm)
+    {
+        return true;
     }
 #endif /* WRENCH_IMAGE_EXTENDED */
 
@@ -641,6 +848,13 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
 
             WREN_METHOD(image, Image, false, resize, "(width, height, filter)", "(_,_,_)");
             WREN_METHOD(image, Image, false, convert, "(colorChannels, bytesPerChannel)", "(_,_)");
+
+            WREN_CODE("copy { convert(colorChannels, bytesPerChannel) }");
+
+            if (!imageImageWrenInitEx(vm))
+            {
+                return false;
+            }
         }
         WREN_END_CLASS();
     }
