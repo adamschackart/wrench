@@ -1,4 +1,5 @@
 rm -rf stb
+rm -rf tinydir
 rm -rf wren
 rm -rf wren.c
 rm -rf run_wren

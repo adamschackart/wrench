@@ -849,6 +849,9 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             WREN_METHOD(image, Image, false, resize, "(width, height, filter)", "(_,_,_)");
             WREN_METHOD(image, Image, false, convert, "(colorChannels, bytesPerChannel)", "(_,_)");
 
+            WREN_CODE("formatConvert(colorChannels) { convert(colorChannels, bytesPerChannel) }");
+            WREN_CODE("typeConvert(bytesPerChannel) { convert(colorChannels, bytesPerChannel) }");
+
             WREN_CODE("copy { convert(colorChannels, bytesPerChannel) }");
 
             if (!imageImageWrenInitEx(vm))

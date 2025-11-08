@@ -2221,7 +2221,7 @@ static size_t wrenchGlobalQuitFuncCount;
 /* Standard library modules are normally DLLs, but we can include them inline.
  */
 #if WRENCH_STDLIB
-    #include <file.cpp>
+    #include <file.c>
     #include <image.c>
     #include <vector.c>
 #endif

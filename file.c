@@ -8,8 +8,7 @@
 #endif
 #include <file.h>
 
-// TODO: Do this in C.
-#include <filesystem>
+#include <tinydir/tinydir.h>
 
 /*
 ================================================================================
@@ -17,45 +16,59 @@
 --------------------------------------------------------------------------------
 */
 
+static void file_Path_list_entry(WrenVM* vm, const char* path, bool recursive, bool include_subdirectories)
+{
+    tinydir_dir dir;
+
+    if (tinydir_open_sorted(&dir, path) != 0)
+    {
+        char error[1024 * 4];
+        wrench_snprintf(error, sizeof(error), "Failed to list path \"%s\".", path);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    for (size_t i = 0; i < dir.n_files; i++)
+    {
+        tinydir_file file;
+        tinydir_readfile_n(&dir, &file, i);
+
+        if (wrench_strcmp(file.name, ".") == 0 || wrench_strcmp(file.name, "..") == 0)
+        {
+            continue;
+        }
+
+        if (file.is_dir)
+        {
+            if (recursive)
+            {
+                file_Path_list_entry(vm, file.path, recursive, include_subdirectories);
+            }
+
+            if (!include_subdirectories)
+            {
+                continue;
+            }
+        }
+
+        wrenSetSlotString(vm, 1, file.path);
+        wrenInsertInList(vm, 0, -1, 1);
+    }
+
+    tinydir_close(&dir);
+}
+
 static void file_Path_list(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
-    const bool recursive = wrenGetSlotBool(vm, 2);
-    const bool include_subdirectories = wrenGetSlotBool(vm, 3);
+    bool recursive = wrenGetSlotBool(vm, 2);
+    bool include_subdirectories = wrenGetSlotBool(vm, 3);
 
-    const std::filesystem::path p{path};
-
-    // TODO: Abort if directory doesn't exist, or empty list?
     wrenSetSlotNewList(vm, 0);
-
-    #define ENTRY() do                                                      \
-    {                                                                       \
-        if (include_subdirectories == false && dir_entry.is_directory())    \
-        {                                                                   \
-            continue;                                                       \
-        }                                                                   \
-                                                                            \
-        wrenSetSlotString(vm, 1, dir_entry.path().c_str());                 \
-        wrenInsertInList(vm, 0, -1, 1);                                     \
-    }                                                                       \
-    while (0)
-
-    if (recursive)
-    {
-        for (auto const& dir_entry : std::filesystem::recursive_directory_iterator{p})
-        {
-            ENTRY();
-        }
-    }
-    else
-    {
-        for (auto const& dir_entry : std::filesystem::directory_iterator{p})
-        {
-            ENTRY();
-        }
-    }
-
-    #undef ENTRY
+    file_Path_list_entry(vm, path, recursive, include_subdirectories);
 }
 
 /*
