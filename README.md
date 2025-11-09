@@ -9,11 +9,11 @@
 - An entry point (main function) for easily running Wren scripts or foreign modules.
 - Easy retrieval of command-line arguments.
 - More slot types.
-- Multiple userdata slots for quick library handle retrieval.
-- Optional standard library modules for file I/O, directory enumeration, etc.
+- Multiple userdata slots for quick user library handle retrieval.
+- Optional standard library modules for file I/O, directory enumeration, images, metaprogramming, etc.
 
 # TODO
 
 - Hot reloading.
-- Wrench++ - compatibility layer with Wren++.
-- Better build system.
+- Wrench++ - compatibility layer with Wren++ or wrenbind17.
+- Visual Studio solution/project files.
