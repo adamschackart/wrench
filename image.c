@@ -86,10 +86,8 @@ static void image_Image_ctor(WrenVM* vm)
 
 static void image_Image_dtor(void* data)
 {
-    if (((image_Image*)data)->pixels != NULL)
-    {
-        wrench_free(((image_Image*)data)->pixels);
-    }
+    WRENCH_CHECK_MAGIC_TAG(data, image, Image);
+    wrench_free(((image_Image*)data)->pixels);
 }
 
 static void image_Image_load(WrenVM* vm)

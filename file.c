@@ -20,7 +20,7 @@ static void file_Path_list_entry(WrenVM* vm, const char* path, bool recursive, b
 {
     tinydir_dir dir;
 
-    if (tinydir_open_sorted(&dir, path) != 0)
+    if (tinydir_open_sorted(&dir, path) < 0)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "Failed to list path \"%s\".", path);

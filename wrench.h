@@ -215,11 +215,11 @@ while (0)
 #endif /* WREN_PROPERTY_EX */
 
 #ifndef WREN_PROPERTY
-#define WREN_PROPERTY(moduleName, className, is_static, propertyName, getter, setter) do    \
-{                                                                                           \
-    WREN_GETTER(moduleName, className, is_static, propertyName);                            \
-    WREN_SETTER(moduleName, className, is_static, propertyName);                            \
-}                                                                                           \
+#define WREN_PROPERTY(moduleName, className, is_static, propertyName) do    \
+{                                                                           \
+    WREN_GETTER(moduleName, className, is_static, propertyName);            \
+    WREN_SETTER(moduleName, className, is_static, propertyName);            \
+}                                                                           \
 while (0)
 
 #endif /* WREN_PROPERTY */
@@ -2224,6 +2224,7 @@ static size_t wrenchGlobalQuitFuncCount;
     #include <file.c>
     #include <image.c>
     #include <vector.c>
+    #include <vm.c>
 #endif
 
 /* ===== [ public API ] ===================================================== */
@@ -2309,6 +2310,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             wrenFreeExtendedVM(vm, false);
             return NULL;
         }
+
+        if (!vmWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
     }
     #endif /* WRENCH_STDLIB */
 
@@ -2342,6 +2349,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
 
     #if WRENCH_STDLIB
     {
+        vmWrenQuit();
         vectorWrenQuit();
         imageWrenQuit();
         fileWrenQuit();
