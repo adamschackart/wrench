@@ -263,6 +263,18 @@ static void image_Image_bytesPerChannel_get(WrenVM* vm)
     wrenSetSlotInt(vm, 0, self->bytes_per_channel);
 }
 
+static bool image_Image_y_up;
+
+static void image_Image_yUp_get(WrenVM* vm)
+{
+    wrenSetSlotBool(vm, 0, image_Image_y_up);
+}
+
+static void image_Image_yUp_set(WrenVM* vm)
+{
+    image_Image_y_up = wrenGetSlotBool(vm, 1);
+}
+
 static void image_Image_index2_get(WrenVM* vm)
 {
     char error[1024 * 4];
@@ -285,7 +297,7 @@ static void image_Image_index2_get(WrenVM* vm)
         return;
     }
 
-    // TODO: if (image_y_up) y = self->height - y - 1;
+    if (image_Image_y_up) y = self->height - y - 1;
 
     switch (self->bytes_per_channel)
     {
@@ -435,7 +447,7 @@ static void image_Image_index2_set(WrenVM* vm)
         return;
     }
 
-    // TODO: if (image_y_up) y = self->height - y - 1;
+    if (image_Image_y_up) y = self->height - y - 1;
 
     switch (self->bytes_per_channel)
     {
@@ -813,6 +825,10 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             // TODO: path
 
             // TODO: toString
+
+            WREN_PROPERTY(image, Image, true, yUp);
+            WREN_CODE("static yDown { !yUp }");
+            WREN_CODE("static yDown=(value) { yUp = !value }");
 
             WREN_INDEX_PROPERTY(image, Image, false, 2);
 

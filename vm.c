@@ -57,6 +57,8 @@ static void vm_WrenVM_ctor(WrenVM* vm)
 
 static void vm_WrenVM_dtor(void* data)
 {
+    WRENCH_CHECK_MAGIC_TAG(data, vm, WrenVM);
+
     if (((vm_WrenVM*)data)->collect)
     {
         if (((vm_WrenVM*)data)->extended)
@@ -416,6 +418,16 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             // TODO: setUserData
 
             // ===== [ Wrench API ] ============================================
+
+            #if WRENCH_DEBUG
+            {
+                WREN_CODE("static debug { true }");
+            }
+            #else
+            {
+                WREN_CODE("static debug { false }");
+            }
+            #endif /* WRENCH_DEBUG */
 
             // TODO: registerGlobalInitFunction
             // TODO: registerGlobalQuitFunction

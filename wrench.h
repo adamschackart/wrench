@@ -307,6 +307,13 @@ while (0)
 // TODO: WREN_MUL(_EX)
 // TODO: WREN_DIV(_EX)
 
+// TODO: WREN_EQUALS(_EX)
+// TODO: WREN_NOT_EQUALS(_EX)
+// TODO: WREN_LESS_THAN(_EX)
+// TODO: WREN_GREATER_THAN(_EX)
+// TODO: WREN_LESS_THAN_OR_EQUALS(_EX)
+// TODO: WREN_GREATER_THAN_OR_EQUALS(_EX)
+
 #ifndef WREN_CODE
 #define WREN_CODE(text) do          \
 {                                   \
@@ -2225,6 +2232,7 @@ static size_t wrenchGlobalQuitFuncCount;
     #include <image.c>
     #include <vector.c>
     #include <vm.c>
+    #include <zip.c>
 #endif
 
 /* ===== [ public API ] ===================================================== */
@@ -2316,6 +2324,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             wrenFreeExtendedVM(vm, false);
             return NULL;
         }
+
+        if (!zipWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
     }
     #endif /* WRENCH_STDLIB */
 
@@ -2349,6 +2363,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
 
     #if WRENCH_STDLIB
     {
+        zipWrenQuit();
         vmWrenQuit();
         vectorWrenQuit();
         imageWrenQuit();

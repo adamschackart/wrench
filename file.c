@@ -126,6 +126,8 @@ static void file_File_close(WrenVM* vm)
         wrenSetSlotString(vm, 0, "failed to close file");
         wrenAbortFiber(vm, 0);
     }
+
+    self->file = NULL;
 }
 
 static void file_File_stdout(WrenVM* vm)
