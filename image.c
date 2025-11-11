@@ -159,6 +159,80 @@ static void image_Image_load(WrenVM* vm)
     }
 }
 
+static void image_Image_loadFromBytes(WrenVM* vm)
+{
+    int size;
+    const char* data = wrenGetSlotBytes(vm, 1, &size);
+
+    const int desired_color_channels = wrenGetSlotInt(vm, 2);
+    const int desired_bytes_per_channel = wrenGetSlotInt(vm, 3);
+
+    image_Image result = {};
+    char error[1024 * 4];
+
+    // HACK
+    const char* filename = "memory";
+
+    switch (desired_bytes_per_channel)
+    {
+        case 0:
+        case sizeof(uint8_t):
+        {
+            result.pixels = (void*)stbi_load_from_memory((stbi_uc const*)data, size, &result.width, &result.height, &result.color_channels, desired_color_channels);
+            result.bytes_per_channel = 1;
+        }
+        break;
+
+        case sizeof(uint16_t):
+        {
+            result.pixels = (void*)stbi_load_16_from_memory((stbi_uc const*)data, size, &result.width, &result.height, &result.color_channels, desired_color_channels);
+            result.bytes_per_channel = 2;
+        }
+        break;
+
+        case sizeof(float):
+        {
+            result.pixels = (void*)stbi_loadf_from_memory((stbi_uc const*)data, size, &result.width, &result.height, &result.color_channels, desired_color_channels);
+            result.bytes_per_channel = 4;
+        }
+        break;
+
+        default:
+        {
+            if (1)
+            {
+                wrench_snprintf(error, sizeof(error), "Invalid bytes per channel hint for image file \"%s\": %i",
+                                                                            filename, desired_bytes_per_channel);
+                wrenSetSlotString(vm, 0, (const char*)error);
+                wrenAbortFiber(vm, 0);
+
+                return;
+            }
+            else
+            {
+                stbi__g_failure_reason = "Invalid bytes per channel hint";
+            }
+        }
+        break;
+    }
+
+    if (result.pixels != NULL)
+    {
+        image_Image* data = (image_Image*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(image_Image));
+        *data = result;
+
+        WRENCH_SET_MAGIC_TAG(data, image, Image);
+    }
+    else
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to load image file \"%s\": %s.",
+                                                    filename, stbi_failure_reason());
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+    }
+}
+
 static void image_Image_save(WrenVM* vm)
 {
     image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
@@ -263,16 +337,16 @@ static void image_Image_bytesPerChannel_get(WrenVM* vm)
     wrenSetSlotInt(vm, 0, self->bytes_per_channel);
 }
 
-static bool image_Image_y_up;
+static bool image_Image_yUp = false;
 
 static void image_Image_yUp_get(WrenVM* vm)
 {
-    wrenSetSlotBool(vm, 0, image_Image_y_up);
+    wrenSetSlotBool(vm, 0, image_Image_yUp);
 }
 
 static void image_Image_yUp_set(WrenVM* vm)
 {
-    image_Image_y_up = wrenGetSlotBool(vm, 1);
+    image_Image_yUp = wrenGetSlotBool(vm, 1);
 }
 
 static void image_Image_index2_get(WrenVM* vm)
@@ -297,7 +371,7 @@ static void image_Image_index2_get(WrenVM* vm)
         return;
     }
 
-    if (image_Image_y_up) y = self->height - y - 1;
+    if (image_Image_yUp) y = self->height - y - 1;
 
     switch (self->bytes_per_channel)
     {
@@ -365,55 +439,33 @@ static void image_Image_index2_get(WrenVM* vm)
 
         case sizeof(float):
         {
-            switch (self->color_channels)
+            // TODO `vector_FltVector_alloc` so we could use context small block allocator.
+            float* elements = (float*)wrench_malloc(sizeof(float) * self->color_channels);
+
+            if (elements == NULL)
             {
-                case 1:
-                {
-                    wrench_assert(0, "TODO");
-                }
-                break;
+                char error[1024 * 4];
+                wrench_snprintf(error, sizeof(error), "Out of memory! Failed to allocate FltVector of size %i.", self->color_channels);
 
-                case 3:
-                {
-                    wrench_assert(0, "TODO");
-                }
-                break;
+                wrenSetSlotString(vm, 0, (const char*)error);
+                wrenAbortFiber(vm, 0);
 
-                case 4:
-                {
-                    // TODO: vector_FltVector_alloc, for small block allocator.
-                    float* elements = (float*)wrench_malloc(sizeof(float[4]));
-
-                    if (elements == NULL)
-                    {
-                        wrenSetSlotString(vm, 0, "Out of memory! Failed to allocate FltVector of size 4.");
-                        wrenAbortFiber(vm, 0);
-
-                        return;
-                    }
-
-                    for (int i = 0; i < 4; i++)
-                    {
-                        elements[i] = ((float*)self->pixels)[y * self->width * 4 + x * 4 + i];
-                    }
-
-                    // XXX: This is slow - should use a WrenHandle.
-                    wrenGetVariable(vm, "vector", "FltVector", 0);
-
-                    vector_FltVector* rgba = (vector_FltVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_FltVector));
-                    WRENCH_SET_MAGIC_TAG(rgba, vector, FltVector);
-
-                    rgba->elements = elements;
-                    rgba->dimensions = 4;
-                }
-                break;
-
-                default:
-                {
-                    wrench_assert(0, "%i", self->color_channels);
-                }
-                break;
+                return;
             }
+
+            for (int i = 0; i < self->color_channels; i++)
+            {
+                elements[i] = ((float*)self->pixels)[y * self->width * self->color_channels + x * self->color_channels + i];
+            }
+
+            // XXX: This is slow - should use a WrenHandle.
+            wrenGetVariable(vm, "vector", "FltVector", 0);
+
+            vector_FltVector* rgba = (vector_FltVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_FltVector));
+            WRENCH_SET_MAGIC_TAG(rgba, vector, FltVector);
+
+            rgba->elements = elements;
+            rgba->dimensions = self->color_channels;
         }
         break;
 
@@ -447,7 +499,7 @@ static void image_Image_index2_set(WrenVM* vm)
         return;
     }
 
-    if (image_Image_y_up) y = self->height - y - 1;
+    if (image_Image_yUp) y = self->height - y - 1;
 
     switch (self->bytes_per_channel)
     {
@@ -613,6 +665,8 @@ static void image_Image_convert(WrenVM* vm)
 
     switch (mode)
     {
+        // ===== [ type conversion ] ===========================================
+
         // float RGBA -> byte RGBA (HDR -> LDR)
         case C(4, 4, 1, 4):
         {
@@ -698,6 +752,8 @@ static void image_Image_convert(WrenVM* vm)
         }
         break;
 
+        // ===== [ format conversion ] =========================================
+
         // byte RGB -> byte RGBA
         case C(1, 3, 1, 4):
         {
@@ -760,6 +816,25 @@ static void image_Image_convert(WrenVM* vm)
         }
         break;
 
+        // ===== [ dual conversion ] ===========================================
+
+        // byte RGBA -> float RGB
+        case C(1, 4, 4, 3):
+        {
+            float* dst = (float*)new_pixels;
+
+            uint8_t* end = (uint8_t*)old_pixels + self->width * self->height * 4;
+            uint8_t* src = (uint8_t*)old_pixels;
+
+            for (; src < end; src += 4, dst += 3)
+            {
+                dst[0] = (float)(wrench_pow(src[0] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+                dst[1] = (float)(wrench_pow(src[1] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+                dst[2] = (float)(wrench_pow(src[2] / 255.0f, stbi__l2h_gamma) * stbi__l2h_scale);
+            }
+        }
+        break;
+
         default:
         {
             wrench_assert(0, "TODO: %i %i -> %i %i", old_color_channels, old_bytes_per_channel,
@@ -812,7 +887,8 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             WREN_METHOD(image, Image, true, load, "(filename, desiredColorChannels, desiredBytesPerChannel)", "(_,_,_)");
             WREN_CODE("static load(filename) { load(filename, 0, 0) }");
 
-            // TODO: loadFromBytes
+            WREN_METHOD(image, Image, true, loadFromBytes, "(data, desiredColorChannels, desiredBytesPerChannel)", "(_,_,_)");
+            WREN_CODE("static loadFromBytes(data) { loadFromBytes(data, 0, 0) }");
 
             // TODO: info
             // TODO: infoFromBytes

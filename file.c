@@ -130,6 +130,18 @@ static void file_File_close(WrenVM* vm)
     self->file = NULL;
 }
 
+static bool file_File_ensureCRLF = false;
+
+static void file_File_ensureCRLF_get(WrenVM* vm)
+{
+    wrenSetSlotBool(vm, 0, file_File_ensureCRLF);
+}
+
+static void file_File_ensureCRLF_set(WrenVM* vm)
+{
+    file_File_ensureCRLF = wrenGetSlotBool(vm, 1);
+}
+
 static void file_File_stdout(WrenVM* vm)
 {
     file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
@@ -182,7 +194,17 @@ static void file_File_putc(WrenVM* vm)
             if (s[0] != '\0')
             {
                 wrench_assert(s[1] == '\0', "multi-char string \"%s\"", s);
-                wrenSetSlotInt(vm, 0, putc(s[0], self->file));
+
+            #if !_WIN32
+                if (s[0] == '\n' && file_File_ensureCRLF)
+                {
+                    wrenSetSlotInt(vm, 0, putc('\r', self->file) + putc('\n', self->file));
+                }
+                else
+            #endif
+                {
+                    wrenSetSlotInt(vm, 0, putc(s[0], self->file));
+                }
             }
             else
             {
@@ -322,6 +344,9 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 
             // TODO: toString
 
+            // Write Windows-style line endings on Unix.
+            WREN_PROPERTY(file, File, true, ensureCRLF);
+
             /* XXX: `stdout` et al. are #defined on most platforms, requiring a bit of a workaround here.
              */
             WREN_METHOD_EX(file, File, true, stdout, "", "", file_File_stdout);
@@ -367,9 +392,18 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
                 "return data\n"
             "}\n"
 
+            "write(string) {\n"
+                "var r = 0\n"
+
+                "for (c in string) {\n"
+                    "r = r + putc(c)\n"
+                "}\n"
+
+                "return r\n"
+            "}\n"
+
             )) { return false; }
 
-            // TODO: write
             // TODO: seek
             // TODO: tell
             // TODO: size

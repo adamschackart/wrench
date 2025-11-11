@@ -150,6 +150,16 @@ static void util_StringUtil_equals(WrenVM* vm)
         //
     }
 
+    static bool utilListUtilWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static bool utilNumUtilWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
     static bool utilStringUtilWrenInitEx(WrenVM* vm)
     {
         return true;
@@ -160,6 +170,76 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 {
     if (!wrenBeginModule(vm, "util")) { return false; } else
     {
+        WREN_BEGIN_CLASS_EX(util, ListUtil, NULL, NULL);
+        {
+            WREN_CODE("static reverse(list) { list[-1..0] }");
+
+            if (!utilListUtilWrenInitEx(vm))
+            {
+                return false;
+            }
+        }
+        WREN_END_CLASS();
+
+        WREN_BEGIN_CLASS_EX(util, NumUtil, NULL, NULL);
+        {
+            if (!wrenCode(vm,
+
+            "static hex4(num) {\n"
+                "var digits = ["
+                    " \"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\","
+                    " \"8\", \"9\", \"A\", \"B\", \"C\", \"D\", \"E\", \"F\" "
+                "]\n"
+
+                #if WRENCH_DEBUG
+                "if (num >= 16) {\n"
+                    "Fiber.abort(\"%(num) is too large\")\n"
+                "}\n"
+                #endif
+
+                "return digits[num]\n"
+            "}\n"
+
+            "static hex8(num) {\n"
+                "var hi = hex4((num >> 4) & 0x0F)\n"
+                "var lo = hex4((num >> 0) & 0x0F)\n"
+
+                "return hi + lo\n"
+            "}\n"
+
+            "static hex16(num) {\n"
+                "var hi = hex8((num >> 8) & 0x00FF)\n"
+                "var lo = hex8((num >> 0) & 0x00FF)\n"
+
+                "return hi + lo\n"
+            "}\n"
+
+            "static hex32(num) {\n"
+                "var hi = hex16((num >> 16) & 0x0000FFFF)\n"
+                "var lo = hex16((num >>  0) & 0x0000FFFF)\n"
+
+                "return hi + lo\n"
+            "}\n"
+
+            /* Behaves the same as Python's hex() function.
+             */
+            "static hex(num) {\n"
+                "if (num == 0) {\n"
+                    "return \"0x0\"\n"
+                "} else {\n"
+                    "return \"0x\" + StringUtil.toLower(hex32(num)).trimStart(\"0\")\n"
+                "}\n"
+            "}\n"
+
+            )) { return false; }
+
+            if (!utilNumUtilWrenInitEx(vm))
+            {
+                return false;
+            }
+        }
+        WREN_END_CLASS();
+
         WREN_BEGIN_CLASS_EX(util, StringUtil, NULL, NULL);
         {
             WREN_METHOD(util, StringUtil, true, isUpper, "(string)", "(_)");

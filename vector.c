@@ -388,6 +388,24 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "copy { type.fromList(toList) }\n"
             "- { fromList(toList.map { |item| -item }.toList) }\n"
 
+            "==(other) {\n"
+                #if WRENCH_DEBUG
+                "if (dimensions != other.dimensions) {\n"
+                    "Fiber.abort(\"eq lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                "}\n"
+                #endif
+
+                "for (i in 0...dimensions) {\n"
+                    "if (this[i] != other[i]) {\n"
+                        "return false\n"
+                    "}\n"
+                "}\n"
+
+                "return true\n"
+            "}\n"
+
+            "!=(other) { !(this == other) }\n"
+
             )) { return false; }
 
             if (!vectorIntVectorWrenInitEx(vm))
@@ -548,6 +566,24 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "copy { type.fromList(toList) }\n"
             "- { fromList(toList.map { |item| -item }.toList) }\n"
 
+            "==(other) {\n"
+                #if WRENCH_DEBUG
+                "if (dimensions != other.dimensions) {\n"
+                    "Fiber.abort(\"eq lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                "}\n"
+                #endif
+
+                "for (i in 0...dimensions) {\n"
+                    "if (((this[i] - other[i]).abs) > 0.00001) {\n"
+                        "return false\n"
+                    "}\n"
+                "}\n"
+
+                "return true\n"
+            "}\n"
+
+            "!=(other) { !(this == other) }\n"
+
             "+(other) {\n"
                 "var v = type.new(dimensions)\n"
 
@@ -582,7 +618,7 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
                 "if (other is type) {\n"
                     #if WRENCH_DEBUG
                     "if (dimensions != other.dimensions) {\n"
-                        "Fiber.abort(\"add lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                        "Fiber.abort(\"sub lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
                     #endif
 
@@ -610,7 +646,7 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
                 "if (other is type) {\n"
                     #if WRENCH_DEBUG
                     "if (dimensions != other.dimensions) {\n"
-                        "Fiber.abort(\"add lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                        "Fiber.abort(\"mul lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
                     #endif
 
@@ -638,7 +674,7 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
                 "if (other is type) {\n"
                     #if WRENCH_DEBUG
                     "if (dimensions != other.dimensions) {\n"
-                        "Fiber.abort(\"add lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                        "Fiber.abort(\"div lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
                     #endif
 
@@ -751,6 +787,24 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "copy { type.fromList(toList) }\n"
             "- { fromList(toList.map { |item| -item }.toList) }\n"
 
+            "==(other) {\n"
+                #if WRENCH_DEBUG
+                "if (dimensions != other.dimensions) {\n"
+                    "Fiber.abort(\"eq lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                "}\n"
+                #endif
+
+                "for (i in 0...dimensions) {\n"
+                    "if (((this[i] - other[i]).abs) > 0.00001) {\n"
+                        "return false\n"
+                    "}\n"
+                "}\n"
+
+                "return true\n"
+            "}\n"
+
+            "!=(other) { !(this == other) }\n"
+
             "+(other) {\n"
                 "var v = type.new(dimensions)\n"
 
@@ -785,7 +839,7 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
                 "if (other is type) {\n"
                     #if WRENCH_DEBUG
                     "if (dimensions != other.dimensions) {\n"
-                        "Fiber.abort(\"add lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                        "Fiber.abort(\"sub lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
                     #endif
 
@@ -813,7 +867,7 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
                 "if (other is type) {\n"
                     #if WRENCH_DEBUG
                     "if (dimensions != other.dimensions) {\n"
-                        "Fiber.abort(\"add lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                        "Fiber.abort(\"mul lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
                     #endif
 
@@ -841,7 +895,7 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
                 "if (other is type) {\n"
                     #if WRENCH_DEBUG
                     "if (dimensions != other.dimensions) {\n"
-                        "Fiber.abort(\"add lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
+                        "Fiber.abort(\"div lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
                     #endif
 
