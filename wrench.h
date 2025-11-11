@@ -520,6 +520,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 
 #if !WRENCH_NO_CSTDLIB
     #include <assert.h>
+    #include <ctype.h>
     #include <float.h>
     #include <limits.h>
     #include <math.h>
@@ -617,6 +618,13 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_stdout
 #define wrench_stdout stdout
 #endif
+#if !defined(wrench_strcasecmp)
+    #if _WIN32
+        #define wrench_strcasecmp _stricmp
+    #else
+        #define wrench_strcasecmp strcasecmp
+    #endif
+#endif
 #ifndef wrench_strchr
 #define wrench_strchr strchr
 #endif
@@ -635,6 +643,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_strstr
 #define wrench_strstr strstr
+#endif
+#ifndef wrench_tolower
+#define wrench_tolower tolower
+#endif
+#ifndef wrench_toupper
+#define wrench_toupper toupper
 #endif
 #ifndef wrench_trunc
 #define wrench_trunc trunc
@@ -2230,6 +2244,7 @@ static size_t wrenchGlobalQuitFuncCount;
 #if WRENCH_STDLIB
     #include <file.c>
     #include <image.c>
+    #include <util.c>
     #include <vector.c>
     #include <vm.c>
     #include <zip.c>
@@ -2313,6 +2328,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             return NULL;
         }
 
+        if (!utilWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+
         if (!vectorWrenInit(vm))
         {
             wrenFreeExtendedVM(vm, false);
@@ -2366,6 +2387,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         zipWrenQuit();
         vmWrenQuit();
         vectorWrenQuit();
+        utilWrenQuit();
         imageWrenQuit();
         fileWrenQuit();
     }
