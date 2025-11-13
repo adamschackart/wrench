@@ -10,7 +10,78 @@
 
 /*
 ================================================================================
- * ~~ [ string utils ] ~~ *
+ * ~~ [ number utilities ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+static const char* wrench_internal_hex4(const int value)
+{
+    static const char* hex_string_digits[16] =
+    {
+        "0", "1", "2", "3", "4", "5", "6", "7",
+        "8", "9", "A", "B", "C", "D", "E", "F",
+    };
+
+    wrench_assert(value < 16, "%i", value);
+    return hex_string_digits[value];
+}
+
+static void util_NumUtil_hex4(WrenVM* vm)
+{
+    wrenSetSlotString(vm, 0, wrench_internal_hex4(wrenGetSlotInt(vm, 1)));
+}
+
+static const char* wrench_internal_hex8(const int value)
+{
+    static char s[4];
+
+    wrench_memcpy(s + 0, wrench_internal_hex4((value >> 4) & 0xF), 1);
+    wrench_memcpy(s + 1, wrench_internal_hex4((value >> 0) & 0xF), 1);
+
+    s[2] = '\0';
+    return (const char*)s;
+}
+
+static void util_NumUtil_hex8(WrenVM* vm)
+{
+    wrenSetSlotString(vm, 0, wrench_internal_hex8(wrenGetSlotInt(vm, 1)));
+}
+
+static const char* wrench_internal_hex16(const int value)
+{
+    static char s[8];
+
+    wrench_memcpy(s + 0, wrench_internal_hex8((value >> 8) & 0xFF), 2);
+    wrench_memcpy(s + 2, wrench_internal_hex8((value >> 0) & 0xFF), 2);
+
+    s[5] = '\0';
+    return (const char*)s;
+}
+
+static void util_NumUtil_hex16(WrenVM* vm)
+{
+    wrenSetSlotString(vm, 0, wrench_internal_hex16(wrenGetSlotInt(vm, 1)));
+}
+
+static const char* wrench_internal_hex32(const int value)
+{
+    static char s[16];
+
+    wrench_memcpy(s + 0, wrench_internal_hex16((value >> 16) & 0xFFFF), 4);
+    wrench_memcpy(s + 4, wrench_internal_hex16((value >>  0) & 0xFFFF), 4);
+
+    s[9] = '\0';
+    return (const char*)s;
+}
+
+static void util_NumUtil_hex32(WrenVM* vm)
+{
+    wrenSetSlotString(vm, 0, wrench_internal_hex32(wrenGetSlotInt(vm, 1)));
+}
+
+/*
+================================================================================
+ * ~~ [ string utilities ] ~~ *
 --------------------------------------------------------------------------------
 */
 
@@ -183,43 +254,88 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS_EX(util, NumUtil, NULL, NULL);
         {
-            if (!wrenCode(vm,
+            if (1)
+            {
+                WREN_METHOD(util, NumUtil, true, hex4, "(num)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
 
-            "static hex4(num) {\n"
-                "var digits = ["
-                    " \"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\","
-                    " \"8\", \"9\", \"A\", \"B\", \"C\", \"D\", \"E\", \"F\" "
-                "]\n"
+                "static hex4(num) {\n"
+                    "var digits = ["
+                        " \"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\","
+                        " \"8\", \"9\", \"A\", \"B\", \"C\", \"D\", \"E\", \"F\" "
+                    "]\n"
 
-                #if WRENCH_DEBUG
-                "if (num >= 16) {\n"
-                    "Fiber.abort(\"%(num) is too large\")\n"
+                    #if WRENCH_DEBUG
+                    "if (num >= 16) {\n"
+                        "Fiber.abort(\"%(num) is too large\")\n"
+                    "}\n"
+                    #endif
+
+                    "return digits[num]\n"
                 "}\n"
-                #endif
 
-                "return digits[num]\n"
-            "}\n"
+                )) { return false; }
+            }
 
-            "static hex8(num) {\n"
-                "var hi = hex4((num >> 4) & 0x0F)\n"
-                "var lo = hex4((num >> 0) & 0x0F)\n"
+            if (0) // XXX TODO FIXME: This is faster but not threadsafe.
+            {
+                WREN_METHOD(util, NumUtil, true, hex8, "(num)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
 
-                "return hi + lo\n"
-            "}\n"
+                "static hex8(num) {\n"
+                    "var hi = hex4((num >> 4) & 0xF)\n"
+                    "var lo = hex4((num >> 0) & 0xF)\n"
 
-            "static hex16(num) {\n"
-                "var hi = hex8((num >> 8) & 0x00FF)\n"
-                "var lo = hex8((num >> 0) & 0x00FF)\n"
+                    "return hi + lo\n"
+                "}\n"
 
-                "return hi + lo\n"
-            "}\n"
+                )) { return false; }
+            }
 
-            "static hex32(num) {\n"
-                "var hi = hex16((num >> 16) & 0x0000FFFF)\n"
-                "var lo = hex16((num >>  0) & 0x0000FFFF)\n"
+            if (0) // XXX TODO FIXME: This is faster but not threadsafe.
+            {
+                WREN_METHOD(util, NumUtil, true, hex16, "(num)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
 
-                "return hi + lo\n"
-            "}\n"
+                "static hex16(num) {\n"
+                    "var hi = hex8((num >> 8) & 0xFF)\n"
+                    "var lo = hex8((num >> 0) & 0xFF)\n"
+
+                    "return hi + lo\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            // XXX TODO FIXME: WRENCH_NUM_(IS/TO)_INT behaves incorrectly with large values.
+            if (0)
+            {
+                WREN_METHOD(util, NumUtil, true, hex32, "(num)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
+
+                "static hex32(num) {\n"
+                    "var hi = hex16((num >> 16) & 0xFFFF)\n"
+                    "var lo = hex16((num >>  0) & 0xFFFF)\n"
+
+                    "return hi + lo\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (!wrenCode(vm,
 
             /* Behaves the same as Python's hex() function.
              */
@@ -233,6 +349,11 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 
             )) { return false; }
 
+            // TODO: bin4
+            // TODO: bin8
+            // TODO: bin16
+            // TODO: bin32
+
             if (!utilNumUtilWrenInitEx(vm))
             {
                 return false;
@@ -242,17 +363,204 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS_EX(util, StringUtil, NULL, NULL);
         {
-            WREN_METHOD(util, StringUtil, true, isUpper, "(string)", "(_)");
-            WREN_METHOD(util, StringUtil, true, isLower, "(string)", "(_)");
+            if (!wrenCode(vm,
 
-            WREN_METHOD(util, StringUtil, true, toUpper, "(string)", "(_)");
-            WREN_METHOD(util, StringUtil, true, toLower, "(string)", "(_)");
+            "static codePoint(c) {\n"
+                #if WRENCH_DEBUG
+                "if (!(c is String)) {\n"
+                    "Fiber.abort(\"Argument must be a string.\")\n"
+                "}\n"
 
-            WREN_METHOD(util, StringUtil, true, caseCompare, "(a, b)", "(_,_)");
-            WREN_METHOD(util, StringUtil, true, compare, "(a, b)", "(_,_)");
+                "if (c.count != 1) {\n"
+                    "Fiber.abort(\"Argument must be a 1-character string.\")\n"
+                "}\n"
+                #endif
 
-            WREN_METHOD(util, StringUtil, true, caseEquals, "(a, b)", "(_,_)");
-            WREN_METHOD(util, StringUtil, true, equals, "(a, b)", "(_,_)");
+                "return c.codePoints[0]\n"
+            "}\n"
+
+            )) { return false; }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, isUpper, "(string)", "(_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static isUpper(string) {\n"
+                    "for (c in string) {\n"
+                        "var d = codePoint(c)\n"
+                        /*
+                         * isLower
+                         */
+                        "if ((d >= 97 && d <= 122) || (d == 181) || (d >= 223 && d <= 246) || (d >= 248 && d <= 255)) {\n"
+                            "return false\n"
+                        "}\n"
+                    "}\n"
+
+                    "return true\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, isLower, "(string)", "(_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static isLower(string) {\n"
+                    "for (c in string) {\n"
+                        "var d = codePoint(c)\n"
+                        /*
+                         * isUpper
+                         */
+                        "if ((d >= 65 && d <= 90) || (d >= 192 && d <= 214) || (d >= 216 && d <= 222)) {\n"
+                            "return false\n"
+                        "}\n"
+                    "}\n"
+
+                    "return true\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, toUpper, "(string)", "(_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static toUpper(string) {\n"
+                    "var s = []\n"
+
+                    "for (c in string) {\n"
+                        "var d = codePoint(c)\n"
+                        /*
+                         * isLower
+                         */
+                        "if ((d >= 97 && d <= 122) || (d >= 224 && d <= 246) || (d >= 248 && d <= 254)) {\n"
+                            "s.add(String.fromCodePoint(d - 32))\n"
+                        "} else {\n"
+                            "s.add(c[0])\n"
+                        "}\n"
+                    "}\n"
+
+                    "return s.join()\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, toLower, "(string)", "(_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static toLower(string) {\n"
+                    "var s = []\n"
+
+                    "for (c in string) {\n"
+                        "var d = codePoint(c)\n"
+                        /*
+                         * isUpper
+                         */
+                        "if ((d >= 65 && d <= 90) || (d >= 192 && d <= 214) || (d >= 216 && d <= 222)) {\n"
+                            "s.add(String.fromCodePoint(d + 32))\n"
+                        "} else {\n"
+                            "s.add(c[0])\n"
+                        "}\n"
+                    "}\n"
+
+                    "return s.join()\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, caseCompare, "(a, b)", "(_,_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static caseCompare(a, b) {\n"
+                    "return compare(toLower(a), toLower(b))\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, compare, "(a, b)", "(_,_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static compare(s1, s2) {\n"
+                    "if (s1 == s2) {\n"
+                        "return 0\n"
+                    "}\n"
+
+                    "var cp1 = s1.codePoints.toList\n"
+                    "var cp2 = s2.codePoints.toList\n"
+                    "var len = (cp1.count <= cp2.count) ? cp1.count : cp2.count\n"
+
+                    "for (i in 0...len) {\n"
+                        "if (cp1[i] < cp2[i]) return -1\n"
+                        "if (cp1[i] > cp2[i]) return 1\n"
+                    "}\n"
+
+                    "return (cp1.count < cp2.count) ? -1 : 1\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, caseEquals, "(a, b)", "(_,_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static caseEquals(a, b) {\n"
+                    "return caseCompare(a, b) == 0\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            if (0) // ASCII
+            {
+                WREN_METHOD(util, StringUtil, true, equals, "(a, b)", "(_,_)");
+            }
+            else // UTF-8
+            {
+                if (!wrenCode(vm,
+
+                "static equals(a, b) {\n"
+                    "return compare(a, b) == 0\n"
+                "}\n"
+
+                )) { return false; }
+            }
 
             if (!utilStringUtilWrenInitEx(vm))
             {

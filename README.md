@@ -14,6 +14,8 @@
 
 # TODO
 
+- Documentation system.
+- Testing system.
 - Hot reloading.
 - Wrench++ - compatibility layer with Wren++ or wrenbind17.
 - Visual Studio solution/project files.
