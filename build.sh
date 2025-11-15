@@ -25,4 +25,6 @@ cc -O0 -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation 
 cc -O0 -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o vm.so vm.c wren.o -lm -ldl &
 cc -O0 -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o zip.so zip.c wren.o -lm -ldl &
 
+#cc -O0 -g -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -ltcc -o tcc.so tcc.c wren.o -lm -ldl &
+
 wait

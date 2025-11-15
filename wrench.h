@@ -952,6 +952,9 @@ typedef struct WrenchContext
 
     WrenchMemoryPool memory_pool;
 
+    // stdlib handles for performance.
+    WrenHandle* FltVector_handle;
+
     WrenVM* vm;
     void* userdata[16];
 }
@@ -2244,6 +2247,7 @@ static size_t wrenchGlobalQuitFuncCount;
 #if WRENCH_STDLIB
     #include <file.c>
     #include <image.c>
+    //#include <tcc.c>
     #include <util.c>
     #include <vector.c>
     #include <vm.c>
@@ -2328,6 +2332,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             return NULL;
         }
 
+        /*if (!tccWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }*/
+
         if (!utilWrenInit(vm))
         {
             wrenFreeExtendedVM(vm, false);
@@ -2378,6 +2388,12 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
 
+    // Release the standard library handles we keep for performance boosts.
+    if (context->FltVector_handle != NULL)
+    {
+        wrenReleaseHandle(context->vm, context->FltVector_handle);
+    }
+
     // We must free the VM first, before dtors in shared libs are unmapped.
     wrenFreeVM(vm);
     wrenchFreeContext(context);
@@ -2388,6 +2404,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         vmWrenQuit();
         vectorWrenQuit();
         utilWrenQuit();
+        //tccWrenQuit();
         imageWrenQuit();
         fileWrenQuit();
     }

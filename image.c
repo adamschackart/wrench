@@ -458,8 +458,18 @@ static void image_Image_index2_get(WrenVM* vm)
                 elements[i] = ((float*)self->pixels)[y * self->width * self->color_channels + x * self->color_channels + i];
             }
 
-            // XXX: This is slow - should use a WrenHandle.
-            wrenGetVariable(vm, "vector", "FltVector", 0);
+            WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+            wrench_assert(context != NULL, "");
+
+            if (context->FltVector_handle != NULL)
+            {
+                wrenSetSlotHandle(vm, 0, context->FltVector_handle);
+            }
+            else
+            {
+                wrenGetVariable(vm, "vector", "FltVector", 0);
+                context->FltVector_handle = wrenGetSlotHandle(vm, 0);
+            }
 
             vector_FltVector* rgba = (vector_FltVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_FltVector));
             WRENCH_SET_MAGIC_TAG(rgba, vector, FltVector);

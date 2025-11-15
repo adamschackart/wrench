@@ -166,6 +166,8 @@ static void file_File_stdin(WrenVM* vm)
     data->file = stdin;
 }
 
+/* TODO: Better error handling.
+ */
 static void file_File_getc(WrenVM* vm)
 {
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
@@ -174,6 +176,8 @@ static void file_File_getc(WrenVM* vm)
     wrenSetSlotInt(vm, 0, getc(self->file));
 }
 
+/* TODO: Better error handling.
+ */
 static void file_File_putc(WrenVM* vm)
 {
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
@@ -233,6 +237,24 @@ static void file_File_eof(WrenVM* vm)
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
     wrenSetSlotBool(vm, 0, feof(self->file) != 0);
+}
+
+static void file_File_read(WrenVM* vm)
+{
+    WRENCH_STUB();
+}
+
+/* TODO: Better error handling.
+ */
+static void file_File_write_(WrenVM* vm)
+{
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    int size;
+    const char* data = wrenGetSlotBytes(vm, 1, &size);
+
+    wrenSetSlotInt(vm, 0, fwrite(data, 1, size, self->file));
 }
 
 static void file_File_flush(WrenVM* vm)
@@ -361,26 +383,37 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_METHOD_EX(file, File, true, EOF, "", "", file_File_EOF);
             WREN_METHOD(file, File, false, eof, "()", "()");
 
-            /* TODO: Native/foreign methods for performance.
-             */
-            if (!wrenCode(vm,
+            if (1)
+            {
+                WREN_METHOD(file, File, false, read, "(count)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
 
-            "read(count) {\n"
-                "var EOF = type.EOF\n"
-                "var s = []\n"
+                "read(count) {\n"
+                    "var EOF = type.EOF\n"
+                    "var s = []\n"
 
-                "for (i in 0...count) {\n"
-                    "var c = getc()\n"
+                    "for (i in 0...count) {\n"
+                        "var c = getc()\n"
 
-                    "if (c < 0 || c == EOF) {\n"
-                        "break\n"
-                    "} else {\n"
-                        "s.insert(-1, String.fromByte(c))\n"
+                        "if (c < 0 || c == EOF) {\n"
+                            "break\n"
+                        "} else {\n"
+                            "s.insert(-1, String.fromByte(c))\n"
+                        "}\n"
                     "}\n"
+
+                    "return s.join()\n"
                 "}\n"
 
-                "return s.join()\n"
-            "}\n"
+                )) { return false; }
+            }
+
+            WREN_METHOD(file, File, false, write_, "(string)", "(_)");
+
+            if (!wrenCode(vm,
 
             "read() { read(Num.maxSafeInteger) }\n"
 
@@ -393,13 +426,21 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             "}\n"
 
             "write(string) {\n"
-                "var r = 0\n"
+            #if _WIN32
+                "if (true) {\n"
+            #else
+                "if (!type.ensureCRLF) {\n"
+            #endif
+                    "return write_(string)\n"
+                "} else {\n"
+                    "var r = 0\n"
 
-                "for (c in string) {\n"
-                    "r = r + putc(c)\n"
+                    "for (c in string) {\n"
+                        "r = r + putc(c)\n"
+                    "}\n"
+
+                    "return r\n"
                 "}\n"
-
-                "return r\n"
             "}\n"
 
             )) { return false; }
