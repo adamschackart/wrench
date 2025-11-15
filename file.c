@@ -383,7 +383,7 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_METHOD_EX(file, File, true, EOF, "", "", file_File_EOF);
             WREN_METHOD(file, File, false, eof, "()", "()");
 
-            if (1)
+            if (0)
             {
                 WREN_METHOD(file, File, false, read, "(count)", "(_)");
             }
