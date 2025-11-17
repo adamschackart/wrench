@@ -114,6 +114,30 @@ static void vm_WrenVM_extended_set(WrenVM* vm)
     self->extended = wrenGetSlotBool(vm, 1);
 }
 
+static void vm_WrenVM_outputFile_get(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    wrenGetVariable(vm, "file", "File", 0);
+
+    file_File* file = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
+    WRENCH_SET_MAGIC_TAG(file, file, File);
+
+    file->file = wrenGetOutputFile(self->vm);
+}
+
+static void vm_WrenVM_outputFile_set(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    file_File* file = (file_File*)wrenGetSlotForeign(vm, 1);
+    WRENCH_CHECK_MAGIC_TAG(file, file, File);
+
+    wrenSetOutputFile(self->vm, file->file);
+}
+
 static void vm_WrenVM_errorString_get(WrenVM* vm)
 {
     vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
@@ -435,6 +459,7 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             // NOTE: We don't expose a `foreignLibraryLoadEnabled` property here,
             // to prevent malicious scripts from escaping sandboxed environments.
 
+            WREN_PROPERTY(vm, WrenVM, false, outputFile);
             WREN_PROPERTY(vm, WrenVM, false, errorString);
 
             // TODO: getUserDataEx

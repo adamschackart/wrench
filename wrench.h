@@ -387,6 +387,11 @@ WRENCH_DECL(void, RegisterGlobalQuitFunction, (wrenLibraryQuitFn quit));
 WRENCH_DECL(bool, GetForeignLibraryLoadEnabled, (WrenVM* vm));
 WRENCH_DECL(void, SetForeignLibraryLoadEnabled, (WrenVM* vm, bool enabled));
 
+/* System.write and System.print output.
+ */
+WRENCH_DECL(FILE*, GetOutputFile, (WrenVM* vm));
+WRENCH_DECL(void, SetOutputFile, (WrenVM* vm, FILE* file));
+
 /* Human-readable error messages.
  */
 WRENCH_DECL(const char*, GetErrorString, (WrenVM* vm));
@@ -951,6 +956,7 @@ typedef struct WrenchContext
     wrenFileFreeFn file_free_callback;
 
     WrenchMemoryPool memory_pool;
+    FILE* output_file;
 
     // stdlib handles for performance.
     WrenHandle* FltVector_handle;
@@ -1293,6 +1299,24 @@ static bool wrenchGetForeignLibraryLoadEnabled(WrenchContext* context)
 static void wrenchSetForeignLibraryLoadEnabled(WrenchContext* context, bool value)
 {
     context->foreign_library_load_disabled = !value;
+}
+
+static FILE* wrenchGetOutputFile(WrenchContext* context)
+{
+    wrench_assert(context->output_file != NULL, "");
+    return context->output_file;
+}
+
+static void wrenchSetOutputFile(WrenchContext* context, FILE* file)
+{
+    if (file != NULL)
+    {
+        context->output_file = file;
+    }
+    else
+    {
+        context->output_file = wrench_stdout;
+    }
 }
 
 static const char* wrenchGetErrorString(WrenchContext* context)
@@ -2149,6 +2173,8 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
         return NULL;
     }
 
+    context->output_file = wrench_stdout;
+
     /* Link.
      */
     if (wrench_context_head == NULL && wrench_context_tail == NULL)
@@ -2453,6 +2479,34 @@ WRENCH_IMPL(void, SetForeignLibraryLoadEnabled, (WrenVM* vm, bool enabled))
     wrench_assert(context != NULL, "");
 
     wrenchSetForeignLibraryLoadEnabled(context, enabled);
+}
+
+WRENCH_IMPL(FILE*, GetOutputFile, (WrenVM* vm))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchGetOutputFile(context);
+    }
+    else
+    {
+        return wrench_stdout;
+    }
+}
+
+WRENCH_IMPL(void, SetOutputFile, (WrenVM* vm, FILE* file))
+{
+    if (vm == NULL)
+    {
+        return;
+    }
+
+    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+    wrench_assert(context != NULL, "");
+
+    wrenchSetOutputFile(context, file);
 }
 
 WRENCH_IMPL(const char*, GetErrorString, (WrenVM* vm))
@@ -3192,7 +3246,7 @@ WRENCH_IMPL(WrenForeignClassMethods, DefaultBindForeignClass, (WrenVM* vm, const
 
 WRENCH_IMPL(void, DefaultWrite, (WrenVM* vm, const char* text))
 {
-    wrench_fprintf(wrench_stdout, "%s", text);
+    wrench_fputs(text, wrenGetOutputFile(vm));
 }
 
 WRENCH_IMPL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* moduleName, int line, const char* message))

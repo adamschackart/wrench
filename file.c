@@ -85,9 +85,12 @@ static void file_File_ctor(WrenVM* vm)
 static void file_File_dtor(void* data)
 {
     WRENCH_CHECK_MAGIC_TAG(data, file, File);
-    FILE* file = ((file_File*)data)->file;
+    file_File* self = (file_File*)data;
 
-    if (file != NULL) { fclose(file); }
+    if (self->collect && self->file != NULL)
+    {
+        fclose(self->file);
+    }
 }
 
 static void file_File_open(WrenVM* vm)
@@ -102,6 +105,7 @@ static void file_File_open(WrenVM* vm)
         file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
         WRENCH_SET_MAGIC_TAG(data, file, File);
 
+        data->collect = true;
         data->file = file;
     }
     else
@@ -361,6 +365,7 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_METHOD(file, File, true, open, "(path, mode)", "(_,_)");
             WREN_METHOD(file, File, false, close, "()", "()");
 
+            // TODO: collect
             // TODO: name
             // TODO: mode
 

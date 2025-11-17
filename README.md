@@ -19,3 +19,20 @@
 - Hot reloading.
 - Wrench++ - compatibility layer with Wren++ or wrenbind17.
 - Visual Studio solution/project files.
+- read-eval-print loop (repl).
+- Debugger.
+- Static analyzer.
+
+- File-like object that writes to memory.
+- Thread and thread pool objects.
+- Process spawning.
+
+- sqlite module.
+- date and time module.
+- json module.
+- xml module.
+- diff module.
+- base64 module.
+- csv module.
+- logging module.
+- curses module.

@@ -10,6 +10,8 @@
 typedef struct file_File
 {
     WRENCH_MAGIC_TAG;
+
+    bool collect;
     FILE* file;
 }
 file_File;

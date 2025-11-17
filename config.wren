@@ -72,6 +72,7 @@ class Config {
     [key]=(value) { set(key, value) }
 
     /* TODO: Rather than calling toString here, ensure all values are strings in set().
+     * For further perf, we could have each key in a string, number, and boolean table.
      */
     getStr(key, fallback) { get(key, fallback).toString }
     setStr(key, value) { set(key, value) }

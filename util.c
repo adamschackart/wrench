@@ -354,6 +354,78 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
             // TODO: bin16
             // TODO: bin32
 
+            if (!wrenCode(vm,
+
+            "static toRoman(val, s) {\n"
+                "if (val == 0) {\n"
+                    "if (s == \"\") {\n"
+                        "return \"nulla\"\n"
+                    "} else {\n"
+                        "return s\n"
+                    "}\n"
+                "}\n"
+
+                "if (val >= 1000) {\n"
+                    "return toRoman(val - 1000, s + \"M\")\n"
+                "}\n"
+
+                "if (val >= 900) {\n"
+                    "return toRoman(val - 900, s + \"CM\")\n"
+                "}\n"
+
+                "if (val >= 500) {\n"
+                    "return toRoman(val - 500, s + \"D\")\n"
+                "}\n"
+
+                "if (val >= 400) {\n"
+                    "return toRoman(val - 400, s + \"CD\")\n"
+                "}\n"
+
+                "if (val >= 100) {\n"
+                    "return toRoman(val - 100, s + \"C\")\n"
+                "}\n"
+
+                "if (val >= 90) {\n"
+                    "return toRoman(val - 90, s + \"XC\")\n"
+                "}\n"
+
+                "if (val >= 50) {\n"
+                    "return toRoman(val - 50, s + \"L\")\n"
+                "}\n"
+
+                "if (val >= 40) {\n"
+                    "return toRoman(val - 40, s + \"XL\")\n"
+                "}\n"
+
+                "if (val >= 10) {\n"
+                    "return toRoman(val - 10, s + \"X\")\n"
+                "}\n"
+
+                "if (val == 9) {\n"
+                    "return toRoman(0, s + \"IX\")\n"
+                "}\n"
+
+                "if (val == 4) {\n"
+                    "return toRoman(0, s + \"IV\")\n"
+                "}\n"
+
+                "if (val >= 5) {\n"
+                    "return toRoman(val - 5, s + \"V\")\n"
+                "}\n"
+
+                "if (val > 0) {\n"
+                    "return toRoman(val - 1, s + \"I\")\n"
+                "}\n"
+
+                "Fiber.abort(\"unreachable\")\n"
+            "}\n"
+
+            "static toRoman(value) {\n"
+                "return toRoman(value, \"\")\n"
+            "}\n"
+
+            )) { return false; }
+
             if (!utilNumUtilWrenInitEx(vm))
             {
                 return false;
