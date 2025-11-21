@@ -5,6 +5,48 @@
 --- TODO: Move to 'math' directory once we get namespace resolution sorted out.
 ----------------------------------------------------------------------------- */
 
+/* TODO (floats):
+ *
+ * - zero
+ * - is_zero (! operator)
+ * - sum
+ * - dot
+ * - magnitude(Squared)
+ * - distance(Squared)
+ * - angle
+ * - reciprocal
+ * - normalize(ToLength)
+ * - min
+ * - max
+ * - clamp
+ * - isUnit
+ * - fixDenormals
+ * - reflect
+ * - multiplyAdd
+ * - lerp
+ * - floor
+ * - ceil
+ * - round
+ * - truncate
+ *
+ * TODO (2D floats):
+ *
+ * - rotate(Point2)
+ * - perp
+ *
+ * TODO (3D floats):
+ *
+ * - cross
+ * - fixDegenerateNormal
+ * - rotate
+ * - upFromForward
+ * - eulerRadiansToGLNormal
+ * - eulerDegreesToGLNormal
+ * - GLNormalToHeadingRadians
+ * - GLNormalToHeadingDegrees
+ * - GLNormalToPitchRadians
+ * - GLNormalToPitchDegrees
+ */
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
@@ -28,6 +70,9 @@ static void vector_IntVector_ctor(WrenVM* vm)
         vector_IntVector* self = (vector_IntVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_IntVector));
         WRENCH_SET_MAGIC_TAG(self, vector, IntVector);
 
+        // TODO: Use `dimensions` MSB as flag.
+        self->collect = true;
+
         self->dimensions = dimensions;
         self->elements = elements;
     }
@@ -44,7 +89,12 @@ static void vector_IntVector_ctor(WrenVM* vm)
 static void vector_IntVector_dtor(void* data)
 {
     WRENCH_CHECK_MAGIC_TAG(data, vector, IntVector);
-    wrench_free(((vector_IntVector*)data)->elements);
+    vector_IntVector* self = (vector_IntVector*)data;
+
+    if (self->collect)
+    {
+        wrench_free(self->elements);
+    }
 }
 
 static void vector_IntVector_dimensions_get(WrenVM* vm)
@@ -112,6 +162,9 @@ static void vector_FltVector_ctor(WrenVM* vm)
         vector_FltVector* self = (vector_FltVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_FltVector));
         WRENCH_SET_MAGIC_TAG(self, vector, FltVector);
 
+        // TODO: Use `dimensions` MSB as flag.
+        self->collect = true;
+
         self->dimensions = dimensions;
         self->elements = elements;
     }
@@ -128,7 +181,12 @@ static void vector_FltVector_ctor(WrenVM* vm)
 static void vector_FltVector_dtor(void* data)
 {
     WRENCH_CHECK_MAGIC_TAG(data, vector, FltVector);
-    wrench_free(((vector_FltVector*)data)->elements);
+    vector_FltVector* self = (vector_FltVector*)data;
+
+    if (self->collect)
+    {
+        wrench_free(self->elements);
+    }
 }
 
 static void vector_FltVector_dimensions_get(WrenVM* vm)
@@ -178,6 +236,31 @@ static void vector_FltVector_index1_set(WrenVM* vm)
     self->elements[index] = value;
 }
 
+static void vector_FltVector_equals(WrenVM* vm)
+{
+    vector_FltVector* self = (vector_FltVector*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vector, FltVector);
+
+    vector_FltVector* other = (vector_FltVector*)wrenGetSlotForeign(vm, 1);
+    WRENCH_CHECK_MAGIC_TAG(other, vector, FltVector);
+
+    wrench_assert(self->dimensions == other->dimensions, "%i != %i", (int)self->dimensions, (int)other->dimensions);
+
+    float* a = self->elements;
+    float* b = other->elements;
+
+    for (size_t i = 0, n = self->dimensions; i < n; i++)
+    {
+        if (wrench_fabsf(a[i] - b[1]) > 0.00001f)
+        {
+            wrenSetSlotBool(vm, 0, false);
+            return;
+        }
+    }
+
+    wrenSetSlotBool(vm, 0, true);
+}
+
 /*
 ================================================================================
  * ~~ [ double vector ] ~~ *
@@ -196,6 +279,9 @@ static void vector_DblVector_ctor(WrenVM* vm)
         vector_DblVector* self = (vector_DblVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_DblVector));
         WRENCH_SET_MAGIC_TAG(self, vector, DblVector);
 
+        // TODO: Use `dimensions` MSB as flag.
+        self->collect = true;
+
         self->dimensions = dimensions;
         self->elements = elements;
     }
@@ -212,7 +298,12 @@ static void vector_DblVector_ctor(WrenVM* vm)
 static void vector_DblVector_dtor(void* data)
 {
     WRENCH_CHECK_MAGIC_TAG(data, vector, DblVector);
-    wrench_free(((vector_DblVector*)data)->elements);
+    vector_DblVector* self = (vector_DblVector*)data;
+
+    if (self->collect)
+    {
+        wrench_free(self->elements);
+    }
 }
 
 static void vector_DblVector_dimensions_get(WrenVM* vm)
@@ -268,7 +359,7 @@ static void vector_DblVector_index1_set(WrenVM* vm)
 --------------------------------------------------------------------------------
 */
 
-#if WRENCH_FILE_EXTENDED
+#if WRENCH_VECTOR_EXTENDED
     /*
      * Enable user extension of stdlib modules.
      */
@@ -300,7 +391,7 @@ static void vector_DblVector_index1_set(WrenVM* vm)
     {
         return true;
     }
-#endif /* WRENCH_FILE_EXTENDED */
+#endif /* WRENCH_VECTOR_EXTENDED */
 
 WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
 {
@@ -566,21 +657,36 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             "copy { type.fromList(toList) }\n"
             "- { fromList(toList.map { |item| -item }.toList) }\n"
 
-            "==(other) {\n"
-                #if WRENCH_DEBUG
-                "if (dimensions != other.dimensions) {\n"
-                    "Fiber.abort(\"eq lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
-                "}\n"
-                #endif
+            )) { return false; }
 
-                "for (i in 0...dimensions) {\n"
-                    "if (((this[i] - other[i]).abs) > 0.00001) {\n"
-                        "return false\n"
+            if (0) // NOTE: Slower, but allows comparison with other types.
+            {
+                if (!wrenCode(vm,
+
+                "==(other) {\n"
+                    #if WRENCH_DEBUG
+                    "if (dimensions != other.dimensions) {\n"
+                        "Fiber.abort(\"eq lhs length (%(dimensions)) != rhs length (%(other.dimensions))\")\n"
                     "}\n"
+                    #endif
+
+                    "for (i in 0...dimensions) {\n"
+                        "if (((this[i] - other[i]).abs) > 0.00001) {\n"
+                            "return false\n"
+                        "}\n"
+                    "}\n"
+
+                    "return true\n"
                 "}\n"
 
-                "return true\n"
-            "}\n"
+                )) { return false; }
+            }
+            else
+            {
+                WREN_EQUALS(vector, FltVector, false);
+            }
+
+            if (!wrenCode(vm,
 
             "!=(other) { !(this == other) }\n"
 

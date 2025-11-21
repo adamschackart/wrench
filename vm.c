@@ -176,7 +176,16 @@ static void vm_WrenVM_getModuleSource(WrenVM* vm)
     vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
 
-    wrenSetSlotString(vm, 0, wrenGetModuleSource(self->vm, wrenGetSlotString(vm, 1)));
+    const char* source = wrenGetModuleSource(self->vm, wrenGetSlotString(vm, 1));
+
+    if (source == NULL)
+    {
+        wrenSetSlotNull(vm, 0); // Not found.
+    }
+    else
+    {
+        wrenSetSlotString(vm, 0, source);
+    }
 }
 
 static void vm_WrenVM_printModuleSource(WrenVM* vm)

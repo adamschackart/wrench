@@ -307,7 +307,30 @@ while (0)
 // TODO: WREN_MUL(_EX)
 // TODO: WREN_DIV(_EX)
 
-// TODO: WREN_EQUALS(_EX)
+#ifndef WREN_EQUALS_EX
+#define WREN_EQUALS_EX(moduleName, className, is_static, func) do                   \
+{                                                                                   \
+    if (!wrenCode(vm, "foreign " _wren_static_ ## is_static " ==(other)\n"))        \
+    {                                                                               \
+        return 0;                                                                   \
+    }                                                                               \
+                                                                                    \
+    if (!wrenRegisterMethod(vm, #moduleName, #className, is_static, "==(_)", func)) \
+    {                                                                               \
+        return 0;                                                                   \
+    }                                                                               \
+}                                                                                   \
+while (0)
+
+#endif /* WREN_EQUALS_EX */
+
+#ifndef WREN_EQUALS
+#define WREN_EQUALS(moduleName, className, is_static)                                           \
+                                                                                                \
+    WREN_EQUALS_EX(moduleName, className, is_static, moduleName ## _ ## className ## _equals)   \
+
+#endif /* WREN_EQUALS */
+
 // TODO: WREN_NOT_EQUALS(_EX)
 // TODO: WREN_LESS_THAN(_EX)
 // TODO: WREN_GREATER_THAN(_EX)
@@ -566,6 +589,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_fabs
 #define wrench_fabs fabs
 #endif
+#ifndef wrench_fabsf
+#define wrench_fabsf fabs
+#endif
 #ifndef wrench_fclose
 #define wrench_fclose fclose
 #endif
@@ -747,6 +773,21 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     wrench_breakpoint();                                                                            \
 }
 #endif /* wrench_assert */
+
+static int wrench_int_min(int a, int b)
+{
+    if (a < b) return a; else return b;
+}
+
+static int wrench_int_max(int a, int b)
+{
+    if (a < b) return b; else return a;
+}
+
+static int wrench_int_clamp(int value, int lo, int hi)
+{
+    return wrench_int_max(lo, wrench_int_min(hi, value));
+}
 
 /* ===== [ small-block allocator ] ========================================== */
 
@@ -2274,6 +2315,7 @@ static size_t wrenchGlobalQuitFuncCount;
     #include <file.c>
     #include <image.c>
     //#include <tcc.c>
+    #include <rect.c>
     #include <util.c>
     #include <vector.c>
     #include <vm.c>
@@ -2364,6 +2406,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             return NULL;
         }*/
 
+        if (!rectWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+
         if (!utilWrenInit(vm))
         {
             wrenFreeExtendedVM(vm, false);
@@ -2430,6 +2478,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         vmWrenQuit();
         vectorWrenQuit();
         utilWrenQuit();
+        rectWrenQuit();
         //tccWrenQuit();
         imageWrenQuit();
         fileWrenQuit();

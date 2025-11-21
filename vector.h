@@ -13,6 +13,7 @@ typedef struct vector_IntVector
 
     size_t dimensions;
     int* elements;
+    bool collect;
 }
 vector_IntVector;
 
@@ -22,6 +23,7 @@ typedef struct vector_FltVector
 
     size_t dimensions;
     float* elements;
+    bool collect;
 }
 vector_FltVector;
 
@@ -31,6 +33,7 @@ typedef struct vector_DblVector
 
     size_t dimensions;
     double* elements;
+    bool collect;
 }
 vector_DblVector;
 

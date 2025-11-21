@@ -7,6 +7,7 @@
 #define WRENCH_IMPLEMENTATION 1
 #endif
 #include <image.h>
+#include <rect.h>
 #include <vector.h>
 
 /* Image loading.
@@ -439,25 +440,6 @@ static void image_Image_index2_get(WrenVM* vm)
 
         case sizeof(float):
         {
-            // TODO `vector_FltVector_alloc` so we could use context small block allocator.
-            float* elements = (float*)wrench_malloc(sizeof(float) * self->color_channels);
-
-            if (elements == NULL)
-            {
-                char error[1024 * 4];
-                wrench_snprintf(error, sizeof(error), "Out of memory! Failed to allocate FltVector of size %i.", self->color_channels);
-
-                wrenSetSlotString(vm, 0, (const char*)error);
-                wrenAbortFiber(vm, 0);
-
-                return;
-            }
-
-            for (int i = 0; i < self->color_channels; i++)
-            {
-                elements[i] = ((float*)self->pixels)[y * self->width * self->color_channels + x * self->color_channels + i];
-            }
-
             WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
             wrench_assert(context != NULL, "");
 
@@ -474,7 +456,37 @@ static void image_Image_index2_get(WrenVM* vm)
             vector_FltVector* rgba = (vector_FltVector*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vector_FltVector));
             WRENCH_SET_MAGIC_TAG(rgba, vector, FltVector);
 
-            rgba->elements = elements;
+            if (0)
+            {
+                // TODO `vector_FltVector_alloc` so we could use context small block allocator.
+                float* elements = (float*)wrench_malloc(sizeof(float) * self->color_channels);
+
+                if (elements == NULL)
+                {
+                    char error[1024 * 4];
+                    wrench_snprintf(error, sizeof(error), "Out of memory! Failed to allocate FltVector of size %i.", self->color_channels);
+
+                    wrenSetSlotString(vm, 0, (const char*)error);
+                    wrenAbortFiber(vm, 0);
+
+                    return;
+                }
+
+                for (int i = 0; i < self->color_channels; i++)
+                {
+                    elements[i] = ((float*)self->pixels)[y * self->width * self->color_channels + x * self->color_channels + i];
+                }
+
+                // TODO: Use `dimensions` MSB as flag.
+                rgba->collect = true;
+
+                rgba->elements = elements;
+            }
+            else
+            {
+                rgba->elements = (float*)self->pixels + y * self->width * self->color_channels + x * self->color_channels;
+            }
+
             rgba->dimensions = self->color_channels;
         }
         break;
@@ -856,6 +868,291 @@ static void image_Image_convert(WrenVM* vm)
     #undef C
 }
 
+static void image_Image_clipIntRect(int* src, int* dst, int w, int h)
+{
+    if (src == NULL)
+    {
+        dst[0] = 0;
+        dst[1] = 0;
+        dst[2] = w;
+        dst[3] = h;
+    }
+    else
+    {
+        /* Convert to axis-aligned bounding box and clamp, then back.
+         */
+        const float x_min = wrench_int_clamp(src[0], 0, w);
+        const float y_min = wrench_int_clamp(src[1], 0, h);
+
+        const float x_max = wrench_int_clamp(src[0] + src[2], 0, w);
+        const float y_max = wrench_int_clamp(src[1] + src[3], 0, h);
+
+        dst[0] = x_min;
+        dst[1] = y_min;
+
+        dst[2] = x_max - x_min;
+        dst[3] = y_max - y_min;
+    }
+}
+
+static void image_Image_region(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    const WrenType type = wrenGetSlotType(vm, 1);
+    int rect[4];
+
+    switch (type)
+    {
+        case WREN_TYPE_FOREIGN:
+        {
+            rect_IntRect* rect_object = (rect_IntRect*)wrenGetSlotForeign(vm, 1);
+            WRENCH_CHECK_MAGIC_TAG(rect_object, rect, IntRect);
+
+            if (image_Image_yUp)
+            {
+                rect_object->xywh[1] = (self->height - rect_object->xywh[3]) - rect_object->xywh[1];
+            }
+
+            image_Image_clipIntRect(rect_object->xywh, rect, self->width, self->height);
+        }
+        break;
+
+        case WREN_TYPE_NULL:
+        {
+            image_Image_clipIntRect(NULL, rect, self->width, self->height);
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "%i", (int)type);
+        }
+        break;
+    }
+
+    wrenGetVariable(vm, "image", "Image", 0);
+
+    image_Image* region = (image_Image*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(image_Image));
+    WRENCH_SET_MAGIC_TAG(region, image, Image);
+
+    region->width = rect[2];
+    region->height = rect[3];
+    region->color_channels = self->color_channels;
+    region->bytes_per_channel = self->bytes_per_channel;
+
+    region->pixels = wrench_malloc(region->width * region->height * self->color_channels * self->bytes_per_channel);
+
+    if (region->pixels == NULL)
+    {
+        char error[1024 * 4];
+
+        wrench_snprintf(error, sizeof(error), "Failed to allocate %ix%ix%ix%i image.",
+                                                        region->width, region->height,
+                                                        region->color_channels,
+                                                        region->bytes_per_channel);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    for (int src_y = rect[1], src_end = rect[1] + region->height, dst_y = 0; src_y < src_end; src_y++, dst_y++)
+    {
+        uint8_t* dst = (uint8_t*)region->pixels + dst_y * region->width * region->color_channels * region->bytes_per_channel;
+
+        uint8_t* src = (uint8_t*)self->pixels + src_y * self->width * self->color_channels * self->bytes_per_channel +
+                                                            rect[0] * self->color_channels * self->bytes_per_channel;
+
+        wrench_memcpy(dst, src, region->width * region->color_channels * region->bytes_per_channel);
+    }
+}
+
+static void image_Image_clipRect(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrenGetVariable(vm, "rect", "IntRect", 0);
+
+    rect_IntRect* output = (rect_IntRect*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(rect_IntRect));
+    WRENCH_SET_MAGIC_TAG(output, rect, IntRect);
+
+    const WrenType type = wrenGetSlotType(vm, 1);
+
+    switch (type)
+    {
+        case WREN_TYPE_FOREIGN:
+        {
+            rect_IntRect* input = (rect_IntRect*)wrenGetSlotForeign(vm, 1);
+            WRENCH_CHECK_MAGIC_TAG(input, rect, IntRect);
+
+            image_Image_clipIntRect(input->xywh, output->xywh, self->width, self->height);
+        }
+        break;
+
+        case WREN_TYPE_NULL:
+        {
+            image_Image_clipIntRect(NULL, output->xywh, self->width, self->height);
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "%i", (int)type);
+        }
+        break;
+    }
+}
+
+static void image_Image_getPixelFloatRGB(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrench_assert(self->pixels != NULL, "invalid image");
+    wrench_assert(self->color_channels == 3, "non-RGB format (%i channels)", self->color_channels);
+    wrench_assert(self->bytes_per_channel == sizeof(float), "non-float type (%i bytes)", self->bytes_per_channel);
+
+    const int x = wrenGetSlotInt(vm, 1);
+    const int y = wrenGetSlotInt(vm, 2);
+
+    wrench_assert(x >= 0, "%i", x);
+    wrench_assert(x < self->width, "%i >= %i", x, self->width);
+    wrench_assert(y >= 0, "%i", y);
+    wrench_assert(y < self->height, "%i >= %i", y, self->height);
+
+    vector_FltVector* rgba = (vector_FltVector*)wrenGetSlotForeign(vm, 3);
+    WRENCH_CHECK_MAGIC_TAG(rgba, vector, FltVector);
+
+    wrench_assert(rgba->dimensions == 3, "non-RGB pixel (%i dimensions)", (int)rgba->dimensions);
+    wrench_assert(!image_Image_yUp, "");
+
+    if (rgba->collect)
+    {
+        wrench_memmove(rgba->elements, (float*)self->pixels + y * self->width * 3 + x * 3, sizeof(float[3]));
+    }
+    else
+    {
+        rgba->elements = (float*)self->pixels + y * self->width * 3 + x * 3;
+    }
+}
+
+static void image_Image_getPixelFloatRGBA(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrench_assert(self->pixels != NULL, "invalid image");
+    wrench_assert(self->color_channels == 4, "non-RGBA format (%i channels)", self->color_channels);
+    wrench_assert(self->bytes_per_channel == sizeof(float), "non-float type (%i bytes)", self->bytes_per_channel);
+
+    const int x = wrenGetSlotInt(vm, 1);
+    const int y = wrenGetSlotInt(vm, 2);
+
+    wrench_assert(x >= 0, "%i", x);
+    wrench_assert(x < self->width, "%i >= %i", x, self->width);
+    wrench_assert(y >= 0, "%i", y);
+    wrench_assert(y < self->height, "%i >= %i", y, self->height);
+
+    vector_FltVector* rgba = (vector_FltVector*)wrenGetSlotForeign(vm, 3);
+    WRENCH_CHECK_MAGIC_TAG(rgba, vector, FltVector);
+
+    wrench_assert(rgba->dimensions == 4, "non-RGBA pixel (%i dimensions)", (int)rgba->dimensions);
+    wrench_assert(!image_Image_yUp, "");
+
+    if (rgba->collect)
+    {
+        wrench_memmove(rgba->elements, (float*)self->pixels + y * self->width * 4 + x * 4, sizeof(float[4]));
+    }
+    else
+    {
+        rgba->elements = (float*)self->pixels + y * self->width * 4 + x * 4;
+    }
+}
+
+static void image_Image_pixelIsBlack(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrench_assert(self->pixels != NULL, "invalid image");
+    wrench_assert(self->color_channels == 3, "TODO");
+    wrench_assert(self->bytes_per_channel == sizeof(float), "TODO");
+
+    const int x = wrenGetSlotInt(vm, 1);
+    const int y = wrenGetSlotInt(vm, 2);
+
+    wrench_assert(x >= 0, "%i", x);
+    wrench_assert(x < self->width, "%i >= %i", x, self->width);
+    wrench_assert(y >= 0, "%i", y);
+    wrench_assert(y < self->height, "%i >= %i", y, self->height);
+
+    const float* const pixel = (const float* const)self->pixels + y * self->width * 3 + x * 3;
+
+    if (wrench_fabsf(pixel[0]) > 0.00001f)
+    {
+        wrenSetSlotBool(vm, 0, false);
+        return;
+    }
+
+    if (wrench_fabsf(pixel[1]) > 0.00001f)
+    {
+        wrenSetSlotBool(vm, 0, false);
+        return;
+    }
+
+    if (wrench_fabsf(pixel[2]) > 0.00001f)
+    {
+        wrenSetSlotBool(vm, 0, false);
+        return;
+    }
+
+    wrenSetSlotBool(vm, 0, true);
+}
+
+static void image_Image_pixelIsWhite(WrenVM* vm)
+{
+    image_Image* self = (image_Image*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, image, Image);
+
+    wrench_assert(self->pixels != NULL, "invalid image");
+    wrench_assert(self->color_channels == 3, "TODO");
+    wrench_assert(self->bytes_per_channel == sizeof(float), "TODO");
+
+    const int x = wrenGetSlotInt(vm, 1);
+    const int y = wrenGetSlotInt(vm, 2);
+
+    wrench_assert(x >= 0, "%i", x);
+    wrench_assert(x < self->width, "%i >= %i", x, self->width);
+    wrench_assert(y >= 0, "%i", y);
+    wrench_assert(y < self->height, "%i >= %i", y, self->height);
+
+    const float* const pixel = (const float* const)self->pixels + y * self->width * 3 + x * 3;
+
+    if (wrench_fabsf(pixel[0] - 1.0f) > 0.00001f)
+    {
+        wrenSetSlotBool(vm, 0, false);
+        return;
+    }
+
+    if (wrench_fabsf(pixel[1] - 1.0f) > 0.00001f)
+    {
+        wrenSetSlotBool(vm, 0, false);
+        return;
+    }
+
+    if (wrench_fabsf(pixel[2] - 1.0f) > 0.00001f)
+    {
+        wrenSetSlotBool(vm, 0, false);
+        return;
+    }
+
+    wrenSetSlotBool(vm, 0, true);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -953,6 +1250,17 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             WREN_CODE("typeConvert(bytesPerChannel) { convert(colorChannels, bytesPerChannel) }");
 
             WREN_CODE("copy { convert(colorChannels, bytesPerChannel) }");
+            WREN_METHOD(image, Image, false, region, "(rect)", "(_)");
+
+            WREN_METHOD(image, Image, false, clipRect, "(rect)", "(_)");
+
+            /* Fast paths for this[x, y] that avoid creation of a temporary FltVector object.
+             */
+            WREN_METHOD(image, Image, false, getPixelFloatRGB, "(x, y, pixel)", "(_,_,_)");
+            WREN_METHOD(image, Image, false, getPixelFloatRGBA, "(x, y, pixel)", "(_,_,_)");
+
+            WREN_METHOD(image, Image, false, pixelIsBlack, "(x, y)", "(_,_)");
+            WREN_METHOD(image, Image, false, pixelIsWhite, "(x, y)", "(_,_)");
 
             if (!imageImageWrenInitEx(vm))
             {
