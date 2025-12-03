@@ -466,7 +466,7 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
                 "while (!eof()) {\n"
                     "s.insert(-1, read(1))\n"
 
-                    "if (s[-1] == \"\n\") {\n"
+                    "if (s[-1] == \"\\n\") {\n"
                         "if (strip_newlines) {\n"
                             "s.removeAt(-1)\n"
                         "}\n"

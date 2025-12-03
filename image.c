@@ -10,6 +10,12 @@
 #include <rect.h>
 #include <vector.h>
 
+/* TCC can't open emmintrin.h.
+ */
+#if defined(__TINYC__) && !defined(STBI_NO_SIMD)
+#define STBI_NO_SIMD 1
+#endif
+
 /* Image loading.
  */
 #if !defined(STB_IMAGE_IMPLEMENTATION)

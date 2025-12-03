@@ -45,7 +45,12 @@
 
 static void zip_CRC32_call(WrenVM* vm)
 {
-    WRENCH_STUB();
+    int crc = wrenGetSlotInt(vm, 1);
+
+    int size;
+    const mz_uint8* data = (const mz_uint8*)wrenGetSlotBytes(vm, 2, &size);
+
+    wrenSetSlotInt(vm, 0, (int)mz_crc32(crc, data, size));
 }
 
 /*
@@ -175,7 +180,48 @@ static void zip_Archive_entryIsDir(WrenVM* vm)
 
 static void zip_Archive_entryCRC32(WrenVM* vm)
 {
-    WRENCH_STUB();
+    char error[1024 * 4];
+    int status;
+
+    zip_Archive* self = (zip_Archive*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, zip, Archive);
+
+    const char* name = wrenGetSlotString(vm, 1);
+    const bool case_sensitive = wrenGetSlotBool(vm, 2);
+
+    if (case_sensitive)
+    {
+        status = zip_entry_opencasesensitive(self->zip, name);
+    }
+    else
+    {
+        status = zip_entry_open(self->zip, name);
+    }
+
+    if (status != 0)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to open archive entry \"%s\": %s.",
+                                                            name, zip_strerror(status));
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    wrenSetSlotInt(vm, 0, (int)zip_entry_crc32(self->zip));
+    status = zip_entry_close(self->zip);
+
+    if (status != 0)
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to close archive entry \"%s\": %s.",
+                                                            name, zip_strerror(status));
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
 }
 
 static void zip_Archive_entryCompressedSize(WrenVM* vm)
@@ -191,12 +237,23 @@ static void zip_Archive_entryDecompressedSize(WrenVM* vm)
 static void zip_Archive_readEntry(WrenVM* vm)
 {
     char error[1024 * 4];
+    int status;
 
     zip_Archive* self = (zip_Archive*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, zip, Archive);
 
     const char* name = wrenGetSlotString(vm, 1);
-    int status = zip_entry_opencasesensitive(self->zip, name);
+    const bool case_sensitive = wrenGetSlotBool(vm, 2);
+    const bool checksum = wrenGetSlotBool(vm, 3);
+
+    if (case_sensitive)
+    {
+        status = zip_entry_opencasesensitive(self->zip, name);
+    }
+    else
+    {
+        status = zip_entry_open(self->zip, name);
+    }
 
     if (status != 0)
     {
@@ -238,6 +295,25 @@ static void zip_Archive_readEntry(WrenVM* vm)
         wrench_free(data);
 
         return;
+    }
+
+    if (checksum)
+    {
+        const unsigned int expected_checksum = zip_entry_crc32(self->zip);
+        const unsigned int computed_checksum = mz_crc32(0, (const mz_uint8*)data, size);
+
+        if (expected_checksum != computed_checksum)
+        {
+            wrench_snprintf(error, sizeof(error), "Archive entry \"%s\" is corrupt.", name);
+
+            wrenSetSlotString(vm, 0, (const char*)error);
+            wrenAbortFiber(vm, 0);
+
+            zip_entry_close(self->zip);
+            wrench_free(data);
+
+            return;
+        }
     }
 
     status = zip_entry_close(self->zip);
@@ -314,7 +390,8 @@ WRENCH_EXPORT bool zipWrenInit(WrenVM* vm)
     {
         WREN_BEGIN_CLASS_EX(zip, CRC32, NULL, NULL);
         {
-            WREN_METHOD(zip, CRC32, true, call, "(data)", "(_)");
+            WREN_METHOD(zip, CRC32, true, call, "(crc, data)", "(_,_)");
+            WREN_CODE("static call(data) { call(0, data) }");
 
             if (!zipCRC32WrenInitEx(vm))
             {
@@ -342,16 +419,17 @@ WRENCH_EXPORT bool zipWrenInit(WrenVM* vm)
             WREN_METHOD(zip, Archive, false, listEntries_, "(unused)", "(_)");
             WREN_CODE("entries { listEntries_(null) }");
 
-            WREN_METHOD(zip, Archive, false, hasEntry, "(name)", "(_)");
-            WREN_METHOD(zip, Archive, false, entryIsFile, "(name)", "(_)");
-            WREN_METHOD(zip, Archive, false, entryIsDir, "(name)", "(_)");
-            WREN_METHOD(zip, Archive, false, entryCRC32, "(name)", "(_)");
-            WREN_METHOD(zip, Archive, false, entryCompressedSize, "(name)", "(_)");
-            WREN_METHOD(zip, Archive, false, entryDecompressedSize, "(name)", "(_)");
-            WREN_METHOD(zip, Archive, false, readEntry, "(name)", "(_)");
+            WREN_METHOD(zip, Archive, false, hasEntry, "(name, case_sensitive)", "(_,_)");
+            WREN_METHOD(zip, Archive, false, entryIsFile, "(name, case_sensitive)", "(_,_)");
+            WREN_METHOD(zip, Archive, false, entryIsDir, "(name, case_sensitive)", "(_,_)");
+            WREN_METHOD(zip, Archive, false, entryCRC32, "(name, case_sensitive)", "(_,_)");
+            WREN_METHOD(zip, Archive, false, entryCompressedSize, "(name, case_sensitive)", "(_,_)");
+            WREN_METHOD(zip, Archive, false, entryDecompressedSize, "(name, case_sensitive)", "(_,_)");
+            WREN_METHOD(zip, Archive, false, readEntry, "(name, case_sensitive, checksum)", "(_,_,_)");
+            WREN_CODE("readEntry(name) { readEntry(name, true, true) }");
             WREN_METHOD(zip, Archive, false, writeEntry, "(name, data)", "(_,_)");
             WREN_METHOD(zip, Archive, false, appendEntry, "(filename)", "(_)");
-            WREN_METHOD(zip, Archive, false, removeEntry, "(name)", "(_)");
+            WREN_METHOD(zip, Archive, false, removeEntry, "(name, case_sensitive)", "(_,_)");
 
             if (!zipArchiveWrenInitEx(vm))
             {
