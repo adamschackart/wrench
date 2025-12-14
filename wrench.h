@@ -498,8 +498,15 @@ WRENCH_DECL(void, ForEachVM, (void (*func)(WrenVM* vm, void* data), void* data))
  */
 WRENCH_DECL(void, ForEachModule, (WrenVM* vm, void (*func)(WrenVM* vm, const char* moduleName, void* data), void* data));
 
-// TODO: wrenForEachClassInModule
-// TODO: wrenForEachMethodInClass
+/* Iterate over all foreign classes in a module and call a callback on each of them.
+ */
+WRENCH_DECL(void, ForEachClassInModule, (WrenVM* vm, const char* moduleName, void (*func)(WrenVM* vm,
+                            const char* moduleName, const char* className, void* data), void* data));
+
+/* Iterate over all foreign methods in a foreign class and call a callback on each of them.
+ */
+WRENCH_DECL(void, ForEachMethodInClass, (WrenVM* vm, const char* moduleName, const char* className, void (*func)(WrenVM* vm,
+            const char* moduleName, const char* className, bool is_static, const char* signature, void* data), void* data));
 
 // TODO: wrenCountModules
 // TODO: wrenListModules
@@ -2023,6 +2030,47 @@ static void wrenchForEachModule(WrenchContext* context, void (*func)(WrenVM* vm,
     }
 }
 
+static void wrenchForEachClassInModule(WrenchContext* context, const char* moduleName, void (*func)(WrenVM* vm,
+                                        const char* moduleName, const char* className, void* data), void* data)
+{
+    wrench_assert(func != NULL, "");
+    WrenchModule* module = wrenchGetModule(context, moduleName, NULL);
+
+    if (module == NULL)
+    {
+        return;
+    }
+
+    for (WrenchClass* node = module->class_head; node != NULL; node = node->next)
+    {
+        func(context->vm, moduleName, node->name, data);
+    }
+}
+
+static void wrenchForEachMethodInClass(WrenchContext* context, const char* moduleName, const char* className, void (*func)(WrenVM* vm,
+                        const char* moduleName, const char* className, bool is_static, const char* signature, void* data), void* data)
+{
+    wrench_assert(func != NULL, "");
+    WrenchModule* module = wrenchGetModule(context, moduleName, NULL);
+
+    if (module == NULL)
+    {
+        return;
+    }
+
+    WrenchClass* klass = wrenchGetClass(context, module, className, NULL);
+
+    if (klass == NULL)
+    {
+        return;
+    }
+
+    for (WrenchMethod* node = klass->method_head; node != NULL; node = node->next)
+    {
+        func(context->vm, moduleName, className, node->is_static, node->signature, data);
+    }
+}
+
 static void* wrenchLoadLibrary(WrenchContext* context, const char* name)
 {
     if (context->foreign_library_load_disabled)
@@ -2312,14 +2360,15 @@ static size_t wrenchGlobalQuitFuncCount;
 /* Standard library modules are normally DLLs, but we can include them inline.
  */
 #if WRENCH_STDLIB
-    #include <file.c>
-    #include <image.c>
-    //#include <tcc.c>
-    #include <rect.c>
-    #include <util.c>
-    #include <vector.c>
-    #include <vm.c>
-    #include <zip.c>
+    #include <wrench_file.c>
+    #include <wrench_image.c>
+    //#include <wrench_tcc.c>
+    #include <wrench_process.c>
+    #include <wrench_rect.c>
+    #include <wrench_util.c>
+    #include <wrench_vector.c>
+    #include <wrench_vm.c>
+    #include <wrench_zip.c>
 #endif
 
 /* ===== [ public API ] ===================================================== */
@@ -2406,6 +2455,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             return NULL;
         }*/
 
+        if (!processWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+
         if (!rectWrenInit(vm))
         {
             wrenFreeExtendedVM(vm, false);
@@ -2479,6 +2534,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         vectorWrenQuit();
         utilWrenQuit();
         rectWrenQuit();
+        processWrenQuit();
         //tccWrenQuit();
         imageWrenQuit();
         fileWrenQuit();
@@ -3029,6 +3085,34 @@ WRENCH_IMPL(void, ForEachModule, (WrenVM* vm, void (*func)(WrenVM* vm, const cha
     wrench_assert(context != NULL, "");
 
     wrenchForEachModule(context, func, data);
+}
+
+WRENCH_IMPL(void, ForEachClassInModule, (WrenVM* vm, const char* moduleName, void (*func)(WrenVM* vm,
+                            const char* moduleName, const char* className, void* data), void* data))
+{
+    if (vm == NULL)
+    {
+        return;
+    }
+
+    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+    wrench_assert(context != NULL, "");
+
+    wrenchForEachClassInModule(context, moduleName, func, data);
+}
+
+WRENCH_IMPL(void, ForEachMethodInClass, (WrenVM* vm, const char* moduleName, const char* className, void (*func)(WrenVM* vm,
+            const char* moduleName, const char* className, bool is_static, const char* signature, void* data), void* data))
+{
+    if (vm == NULL)
+    {
+        return;
+    }
+
+    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+    wrench_assert(context != NULL, "");
+
+    wrenchForEachMethodInClass(context, moduleName, className, func, data);
 }
 
 WRENCH_IMPL(float, GetSlotFloat, (WrenVM* vm, int slot))

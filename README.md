@@ -18,6 +18,8 @@
 - Testing system.
 - Hot reloading.
 - Wrench++ - compatibility layer with Wren++ or wrenbind17.
+- Compatibility with wren-cli.
+- Copy path resolution/relative import logic from wren-cli.
 - Visual Studio solution/project files.
 - read-eval-print loop (repl).
 - Debugger.
@@ -25,7 +27,6 @@
 
 - File-like object that writes to memory.
 - Thread and thread pool objects.
-- Process spawning.
 
 - sqlite module.
 - date and time module.

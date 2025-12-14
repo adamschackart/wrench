@@ -6,7 +6,7 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <zip.h>
+#include <wrench_zip.h>
 
 #if !defined(ZIP_H)
     /*
@@ -420,16 +420,31 @@ WRENCH_EXPORT bool zipWrenInit(WrenVM* vm)
             WREN_CODE("entries { listEntries_(null) }");
 
             WREN_METHOD(zip, Archive, false, hasEntry, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("hasEntry(name) { hasEntry(name, true) }");
+
             WREN_METHOD(zip, Archive, false, entryIsFile, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("entryIsFile(name) { entryIsFile(name, true) }");
+
             WREN_METHOD(zip, Archive, false, entryIsDir, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("entryIsDir(name) { entryIsDir(name, true) }");
+
             WREN_METHOD(zip, Archive, false, entryCRC32, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("entryCRC32(name) { entryCRC32(name, true) }");
+
             WREN_METHOD(zip, Archive, false, entryCompressedSize, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("entryCompressedSize(name) { entryCompressedSize(name, true) }");
+
             WREN_METHOD(zip, Archive, false, entryDecompressedSize, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("entryDecompressedSize(name) { entryDecompressedSize(name, true) }");
+
             WREN_METHOD(zip, Archive, false, readEntry, "(name, case_sensitive, checksum)", "(_,_,_)");
             WREN_CODE("readEntry(name) { readEntry(name, true, true) }");
+
             WREN_METHOD(zip, Archive, false, writeEntry, "(name, data)", "(_,_)");
             WREN_METHOD(zip, Archive, false, appendEntry, "(filename)", "(_)");
+
             WREN_METHOD(zip, Archive, false, removeEntry, "(name, case_sensitive)", "(_,_)");
+            WREN_CODE("removeEntry(name) { removeEntry(name, true, true) }");
 
             if (!zipArchiveWrenInitEx(vm))
             {

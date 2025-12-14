@@ -8,7 +8,7 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <rect.h>
+#include <wrench_rect.h>
 
 /*
 ================================================================================

@@ -4,6 +4,7 @@
 # ------------------------------------------------------------------------------
 
 rm -rf stb
+rm -rf subprocess.h
 rm -rf tinydir
 rm -rf wren
 rm -rf zip

@@ -50,7 +50,7 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <vector.h>
+#include <wrench_vector.h>
 
 /*
 ================================================================================

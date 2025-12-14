@@ -83,11 +83,11 @@ class Config {
     getBool(key, fallback) {
         var s = StringUtil.toLower(getStr(key, fallback))
 
-        if (s == "true" || s == "yes" || s == "on") {
+        if (s == "1" || s == "true" || s == "yes" || s == "on") {
             return true
         }
 
-        if (s == "false" || s == "no" || s == "off") {
+        if (s == "0" || s == "false" || s == "no" || s == "off") {
             return false
         }
 

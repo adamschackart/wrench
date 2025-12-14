@@ -6,8 +6,8 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <file.h>
-#include <vm.h>
+#include <wrench_file.h>
+#include <wrench_vm.h>
 
 /*
 ================================================================================
@@ -326,6 +326,51 @@ static void vm_WrenVM_getModules_(WrenVM* vm)
     wrenForEachModule(self->vm, vm_WrenVM_moduleVisit, vm);
 }
 
+static void vm_WrenVM_classVisit(WrenVM* vm, const char* moduleName,
+                                const char* className, void* caller)
+{
+    wrenSetSlotString((WrenVM*)caller, 1, className);
+    wrenInsertInList((WrenVM*)caller, 0, -1, 1);
+}
+
+static void vm_WrenVM_getClassesInModule(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    wrenSetSlotNewList(vm, 0);
+    const char* moduleName = wrenGetSlotString(vm, 1);
+
+    wrenForEachClassInModule(self->vm, moduleName, vm_WrenVM_classVisit, vm);
+}
+
+static void vm_WrenVM_methodVisit(WrenVM* vm, const char* moduleName, const char* className,
+                                        bool is_static, const char* signature, void* caller)
+{
+    char method[1024 * 4];
+
+    if (wrench_snprintf(method, sizeof(method), /*"foreign "*/"%s%s", is_static ? "static " : "", signature) < 0)
+    {
+        // TODO: Handle truncation.
+    }
+
+    wrenSetSlotString((WrenVM*)caller, 1, (const char*)method);
+    wrenInsertInList((WrenVM*)caller, 0, -1, 1);
+}
+
+static void vm_WrenVM_getMethodsInClass(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    wrenSetSlotNewList(vm, 0);
+
+    const char* moduleName = wrenGetSlotString(vm, 1);
+    const char* className = wrenGetSlotString(vm, 2);
+
+    wrenForEachMethodInClass(self->vm, moduleName, className, vm_WrenVM_methodVisit, vm);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -516,6 +561,9 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
 
             WREN_METHOD(vm, WrenVM, false, getModules_, "(unused)", "(_)");
             WREN_CODE("modules { getModules_(null) }");
+
+            WREN_METHOD(vm, WrenVM, false, getClassesInModule, "(moduleName)", "(_)");
+            WREN_METHOD(vm, WrenVM, false, getMethodsInClass, "(moduleName, className)", "(_,_)");
 
             // TODO: getSlotFloat
             // TODO: setSlotFloat

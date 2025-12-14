@@ -6,9 +6,9 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <image.h>
-#include <rect.h>
-#include <vector.h>
+#include <wrench_image.h>
+#include <wrench_rect.h>
+#include <wrench_vector.h>
 
 /* TCC can't open emmintrin.h.
  */

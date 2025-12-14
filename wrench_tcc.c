@@ -6,7 +6,7 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <tcc.h>
+#include <wrench_tcc.h>
 
 /*
 ================================================================================
@@ -26,6 +26,16 @@ static void* tcc_State_realloc(void *ptr, unsigned long size)
 
 static void tcc_State_ctor(WrenVM* vm)
 {
+    /* XXX: We're basically treating this as "security hardened" mode. Disable compiler.
+     */
+    if (!wrenGetForeignLibraryLoadEnabled(vm))
+    {
+        wrenSetSlotString(vm, 0, "Foreign code loading is disabled - cannot create TCC state.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
     TCCState* state = tcc_new();
 
     if (state != NULL)

@@ -6,7 +6,7 @@
 #ifndef WRENCH_IMPLEMENTATION
 #define WRENCH_IMPLEMENTATION 1
 #endif
-#include <file.h>
+#include <wrench_file.h>
 
 #include <tinydir/tinydir.h>
 
@@ -453,6 +453,8 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             // TODO: seek
             // TODO: tell
             // TODO: size
+
+            // TODO: bytesRemaining (ftell, fseek to end, fseek to saved pos, return difference)
 
             WREN_METHOD(file, File, false, flush, "()", "()");
 
