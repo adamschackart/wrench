@@ -526,6 +526,12 @@ WRENCH_DECL(void, SetSlotInt, (WrenVM* vm, int slot, int value));
 WRENCH_DECL(uint8_t, GetSlotByte, (WrenVM* vm, int slot));
 WRENCH_DECL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value));
 
+/* Retrieves an entry from the map in [mapSlot] from index int pointer, and stores
+ * key in [keySlot] and value in [valueSlot]. To iterate, set int index to 0, and
+ * call until this returns false. Thanks to Jason A. Petrasko (Muragami) for this.
+ */
+WRENCH_DECL(bool, GetMapEntry, (WrenVM* vm, int mapSlot, int *index, int keySlot, int valueSlot));
+
 /* WrenConfiguration callbacks.
  */
 WRENCH_DECL(void*, DefaultReallocate, (void* ptr, size_t newSize, void* userData));
@@ -647,8 +653,14 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_realloc
 #define wrench_realloc realloc
 #endif
+#ifndef wrench_realpath
+#define wrench_realpath realpath
+#endif
 #ifndef wrench_snprintf
 #define wrench_snprintf snprintf
+#endif
+#ifndef wrench_stat
+#define wrench_stat stat
 #endif
 #ifndef wrench_stderr
 #define wrench_stderr stderr
@@ -2247,7 +2259,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->source_code_alloc_mark = context->source_code_alloc_base;
 
     #ifndef WRENCH_MEMORY_POOL_BLOCK_SIZE
-    #define WRENCH_MEMORY_POOL_BLOCK_SIZE 16
+    #define WRENCH_MEMORY_POOL_BLOCK_SIZE 64
     #endif
     #ifndef WRENCH_MEMORY_POOL_BLOCK_COUNT
     #define WRENCH_MEMORY_POOL_BLOCK_COUNT ((1024 * 1024 * 1) / (WRENCH_MEMORY_POOL_BLOCK_SIZE))
@@ -3184,6 +3196,66 @@ WRENCH_IMPL(uint8_t, GetSlotByte, (WrenVM* vm, int slot))
 WRENCH_IMPL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value))
 {
     wrenSetSlotInt(vm, slot, (int)value);
+}
+
+//#include <wren/src/vm/wren_common.h>
+//#include <wren/src/vm/wren_compiler.h>
+//#include <wren/src/vm/wren_core.h>
+//#include <wren/src/vm/wren_debug.h>
+//#include <wren/src/vm/wren_math.h>
+//#include <wren/src/vm/wren_primitive.h>
+//#include <wren/src/vm/wren_utils.h>
+#include <wren/src/vm/wren_value.h>
+#include <wren/src/vm/wren_vm.h>
+
+/* XXX: This reaches into both VM and object internals, but it's the only way I can see to do this
+ * without trying something like `wrenGetVariable` on `Map.iteratorValue`, or something yet uglier.
+ */
+WRENCH_IMPL(bool, GetMapEntry, (WrenVM* vm, int mapSlot, int *index, int keySlot, int valueSlot))
+{
+    wrench_assert(mapSlot >= 0, "Slot cannot be negative.");
+    wrench_assert(mapSlot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    wrench_assert(keySlot >= 0, "Slot cannot be negative.");
+    wrench_assert(keySlot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    wrench_assert(valueSlot >= 0, "Slot cannot be negative.");
+    wrench_assert(valueSlot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    wrench_assert(IS_MAP(vm->apiStack[mapSlot]), "Slot must hold a map.");
+    ObjMap* map = AS_MAP(vm->apiStack[mapSlot]);
+
+    uint32_t i = (uint32_t)*index;
+
+    if (i >= map->capacity)
+    {
+        return false;
+    }
+
+    while (IS_UNDEFINED(map->entries[i].key) && i < map->capacity)
+    {
+        i++;
+    }
+
+    if (i == map->capacity)
+    {
+        *index = i;
+        return false;
+    }
+
+    if (IS_UNDEFINED(map->entries[i].value))
+    {
+        vm->apiStack[valueSlot] = NULL_VAL;
+    }
+    else
+    {
+        vm->apiStack[valueSlot] = map->entries[i].value;
+    }
+
+    vm->apiStack[keySlot] = map->entries[i].key;
+    *index = i + 1;
+
+    return true;
 }
 
 WRENCH_IMPL(void*, DefaultReallocate, (void* old_memory, size_t new_size, void* userdata))

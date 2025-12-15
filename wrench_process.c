@@ -54,6 +54,8 @@ static void process_Process_dtor(void* data)
         }
     }
 
+    // TODO: Dump stdout and/or stderr if any bytes remaining?
+
     if (subprocess_destroy(&self->process) != 0)
     {
         wrench_assert(0, "subprocess_destroy failed");
@@ -455,6 +457,10 @@ static void process_Process_alive(WrenVM* vm)
     }
 #endif /* WRENCH_PROCESS_EXTENDED */
 
+#undef stdin
+#undef stdout
+#undef stderr
+
 WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 {
     if (!wrenBeginModule(vm, "process")) { return false; } else
@@ -463,6 +469,18 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS(process, Process);
         {
+            if (!wrenCode(vm,
+
+            "static run(cmd) {\n"
+                "var process = create(cmd)\n"
+                "process.join()\n"
+
+                "System.write(process.readStdout())\n"
+                "System.write(process.readStderr())\n"
+            "}\n"
+
+            )) { return false; }
+
             WREN_CODE("static option_combined_stdout_stderr { 0x1 }");
             WREN_CODE("static option_inherit_environment { 0x2 }");
             WREN_CODE("static option_enable_async { 0x4 }");
@@ -471,9 +489,22 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 
             WREN_METHOD(process, Process, true, create_, "(command_line, options, environment, extra_slot)", "(_,_,_,_)");
 
-            WREN_CODE("static create(command_line, options, environment) { create_(command_line, options, environment, null) }");
-            WREN_CODE("static create(command_line, options) { create_(command_line, options, null, null) }");
-            WREN_CODE("static create(command_line) { create_(command_line, null, null, null) }");
+            /* XXX TODO: Temp stopgap solution. Need a function to count the tokens strtok would find.
+             */
+            if (!wrenCode(vm,
+
+            "static create(command_line, options, environment) {\n"
+                "if (command_line is String) {\n"
+                    "command_line = command_line.split(\" \")\n"
+                "}\n"
+
+                "return create_(command_line, options, environment, null)\n"
+            "}\n"
+
+            )) { return false; }
+
+            WREN_CODE("static create(command_line, options) { create(command_line, options, null) }");
+            WREN_CODE("static create(command_line) { create(command_line, null) }");
 
             // TODO: self
 

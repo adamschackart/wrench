@@ -61,6 +61,74 @@ static void file_Path_list_entry(WrenVM* vm, const char* path, bool recursive, b
     tinydir_close(&dir);
 }
 
+static void file_Path_resolve(WrenVM* vm)
+{
+    const char* path = wrenGetSlotString(vm, 1);
+    char out[1024 * 4];
+
+    #if _WIN32
+    {
+        DWORD length = GetFullPathNameA(path, 0xFFFFFFFF, out, NULL);
+
+        if (length == 0)
+        {
+            wrenSetSlotString(vm, 0, "GetFullPathNameA failed");
+            wrenAbortFiber(vm, 0);
+
+            return;
+        }
+
+        const DWORD dwAttrib = GetFileAttributesA((const char*)out);
+
+        const bool is_directory = (dwAttrib != INVALID_FILE_ATTRIBUTES &&
+                                    dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
+
+        if (is_directory && out[length - 1] != '\\')
+        {
+            out[length] = '\\';
+            out[length + 1] = '\0';
+        }
+    }
+    #else
+    {
+        const char* r = (const char*)wrench_realpath(path, out);
+
+        if (r == NULL)
+        {
+            wrenSetSlotString(vm, 0, "realpath failed");
+            wrenAbortFiber(vm, 0);
+
+            return;
+        }
+
+        struct stat statbuf;
+
+        if (wrench_stat(r, &statbuf) != 0)
+        {
+            wrenSetSlotString(vm, 0, "stat failed");
+            wrenAbortFiber(vm, 0);
+
+            return;
+        }
+
+        const bool is_directory = S_ISDIR(statbuf.st_mode);
+
+        if (is_directory)
+        {
+            const size_t length = wrench_strlen(r);
+
+            if (out[length - 1] != '/')
+            {
+                out[length] = '/';
+                out[length + 1] = '\0';
+            }
+        }
+    }
+    #endif
+
+    wrenSetSlotString(vm, 0, (const char*)out);
+}
+
 static void file_Path_list(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
@@ -310,6 +378,10 @@ static void file_File_flush(WrenVM* vm)
     }
 #endif /* WRENCH_FILE_EXTENDED */
 
+#undef stdin
+#undef stdout
+#undef stderr
+
 WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 {
     if (!wrenBeginModule(vm, "file")) { return false; } else
@@ -347,6 +419,10 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             // TODO: copyFile
             // TODO: moveFile
             // TODO: deleteFile
+
+            WREN_METHOD(file, Path, true, resolve, "(path)", "(_)");
+
+            // TODO: parent (resolve "path/..", ensuring possible filename is stripped off the end)
 
             WREN_METHOD(file, Path, true, list, "(path, recursive, include_subdirectories)", "(_,_,_)");
             WREN_CODE("static list(path, recursive) { list(path, recursive, true) }");

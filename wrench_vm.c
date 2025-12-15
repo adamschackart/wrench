@@ -572,6 +572,8 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             // TODO: getSlotByte
             // TODO: setSlotByte
 
+            // TODO: getMapEntry
+
             // TODO: defaultReallocate
             // TODO: defaultResolveModule
             // TODO: defaultLoadModule
