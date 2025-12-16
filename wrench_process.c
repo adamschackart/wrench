@@ -469,14 +469,18 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS(process, Process);
         {
+            /* Easy mode - runs a program and blocks until it's finished, allowing std(out/err) to behave normally.
+             */
             if (!wrenCode(vm,
 
             "static run(cmd) {\n"
                 "var process = create(cmd)\n"
-                "process.join()\n"
+                "var code = process.join()\n"
 
                 "System.write(process.readStdout())\n"
                 "System.write(process.readStderr())\n"
+
+                "return code\n"
             "}\n"
 
             )) { return false; }
