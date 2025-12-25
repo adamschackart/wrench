@@ -3,6 +3,7 @@
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 ----------------------------------------------------------------------------- */
 import "file" for Path
+import "meta" for Meta
 import "platform" for Platform
 import "process" for Process
 import "util" for StringUtil
@@ -16,7 +17,6 @@ import "vm" for WrenVM
 -* export projects to cmake, premake, make, visual studio project files, etc.
 -*
 -* HeaderizeNode (binary, string, text)
--* (Process/Command)Node (build and/or clean may call Process.(run/system))
 -* (Copy/Move)FileNode
 -* AssemblerNode
 -*
@@ -257,6 +257,9 @@ class Project {
 */
 
 class ForeignNode {
+    /*
+     * TODO: Node base class to avoid some of this repetitive boilerplate.
+     */
     construct new(project, name, mode) {
         if (project == null) {
             _project = Project.new(name)
@@ -843,6 +846,208 @@ class ForeignNode {
                 linkerObjects_ +
                 linkerLibraries_ +
                 linkerLibraryPaths_)
+    }
+}
+
+/*
+================================================================================
+ * ~~ [ misc. nodes ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+class WrenNode {
+    construct new(project, name, buildFunc, cleanFunc, finishBuildFunc, finishCleanFunc) {
+        if (project == null) {
+            _project = Project.new(name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+
+        _buildFunc = buildFunc
+        _cleanFunc = cleanFunc
+
+        _finishBuildFunc = finishBuildFunc
+        _finishCleanFunc = finishCleanFunc
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    buildFunc { _buildFunc }
+    buildFunc=(value) { _buildFunc = value }
+
+    cleanFunc { _cleanFunc }
+    cleanFunc=(value) { _cleanFunc = value }
+
+    finishBuildFunc { _finishBuildFunc }
+    finishBuildFunc=(value) { _finishBuildFunc = value }
+
+    finishCleanFunc { _finishCleanFunc }
+    finishCleanFunc=(value) { _finishCleanFunc = value }
+
+    build() {
+        if (buildFunc == null) {
+            return
+        }
+
+        if (buildFunc is String) {
+            return Meta.eval(buildFunc)
+        }
+
+        return buildFunc.call()
+    }
+
+    clean() {
+        if (cleanFunc == null) {
+            return
+        }
+
+        if (cleanFunc is String) {
+            return Meta.eval(cleanFunc)
+        }
+
+        return cleanFunc.call()
+    }
+
+    finish(command) {
+        if (command == "build") {
+            if (finishBuildFunc == null) {
+                return
+            }
+
+            if (finishBuildFunc is String) {
+                return Meta.eval(finishBuildFunc)
+            }
+
+            return finishBuildFunc.call()
+        } else if (command == "clean") {
+            if (finishCleanFunc == null) {
+                return
+            }
+
+            if (finishCleanFunc is String) {
+                return Meta.eval(finishCleanFunc)
+            }
+
+            return finishCleanFunc.call()
+        } else {
+            Fiber.abort(command)
+        }
+    }
+}
+
+class ProcessNode {
+    construct new(project, name, async, buildCommand, cleanCommand, finishBuildCommand, finishCleanCommand) {
+        if (project == null) {
+            _project = Project.new(name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+        _async = async
+
+        _buildCommand = buildCommand
+        _cleanCommand = cleanCommand
+
+        _finishBuildCommand = finishBuildCommand
+        _finishCleanCommand = finishCleanCommand
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    async { _async }
+    async=(value) { _async = value }
+
+    buildCommand { _buildCommand }
+    buildCommand=(value) { _buildCommand = value }
+
+    cleanCommand { _cleanCommand }
+    cleanCommand=(value) { _cleanCommand = value }
+
+    finishBuildCommand { _finishBuildCommand }
+    finishBuildCommand=(value) { _finishBuildCommand = value }
+
+    finishCleanCommand { _finishCleanCommand }
+    finishCleanCommand=(value) { _finishCleanCommand = value }
+
+    build() {
+        if (buildCommand == null || buildCommand == "") {
+            return
+        }
+
+        if (async) {
+            _buildProcess = Process.create(buildCommand)
+        } else {
+            Process.run(buildCommand)
+        }
+    }
+
+    clean() {
+        if (cleanCommand == null || cleanCommand == "") {
+            return
+        }
+
+        if (async) {
+            _cleanProcess = Process.create(cleanCommand)
+        } else {
+            Process.run(cleanCommand)
+        }
+    }
+
+    finish(command) {
+        if (command == "build") {
+            if (_buildProcess != null) {
+                var code = _buildProcess.join()
+
+                System.write(_buildProcess.readStdout())
+
+                if (code != 0) {
+                    Fiber.abort(_buildProcess.readStderr())
+                } else {
+                    System.write(_buildProcess.readStderr())
+                }
+            }
+
+            if (finishBuildCommand != null && finishBuildCommand != "") {
+                Process.run(finishBuildCommand)
+            }
+        } else if (command == "clean") {
+            if (_cleanProcess != null) {
+                var code = _cleanProcess.join()
+
+                System.write(_cleanProcess.readStdout())
+
+                if (code != 0) {
+                    Fiber.abort(_cleanProcess.readStderr())
+                } else {
+                    System.write(_cleanProcess.readStderr())
+                }
+            }
+
+            if (finishCleanCommand != null && finishCleanCommand != "") {
+                Process.run(finishCleanCommand)
+            }
+        } else {
+            Fiber.abort(command)
+        }
     }
 }
 
