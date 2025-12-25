@@ -11,6 +11,7 @@ rm -rf zip
 
 rm -rf wren.c
 rm -rf run_wren
+rm -rf *.a
 rm -rf *.o
 rm -rf *.so
 rm -rf *.dSYM

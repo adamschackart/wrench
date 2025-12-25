@@ -62,6 +62,21 @@ static void process_Process_dtor(void* data)
     }
 }
 
+static void process_Process_system(WrenVM* vm)
+{
+    /* XXX: We're basically treating this as "security hardened" mode. Disable `system` (insecure).
+     */
+    if (!wrenGetForeignLibraryLoadEnabled(vm))
+    {
+        wrenSetSlotString(vm, 0, "Foreign code loading is disabled - cannot run system commands.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    wrenSetSlotInt(vm, 0, wrench_system(wrenGetSlotString(vm, 1)));
+}
+
 static void process_Process_create_(WrenVM* vm)
 {
     /* XXX: We're basically treating this as "security hardened" mode. Disable process creation.
@@ -88,6 +103,8 @@ static void process_Process_create_(WrenVM* vm)
         case WREN_TYPE_LIST:
         {
             num_args = wrenGetListCount(vm, 1);
+
+            // TODO: Use stack allocator... must free arguments in reverse order.
             command_line = (char**)wrench_malloc((num_args + 1) * sizeof(char*));
 
             if (command_line == NULL)
@@ -161,9 +178,9 @@ static void process_Process_create_(WrenVM* vm)
             wrench_assert(options == 0, "%i", options);
 
             if (0) options |= subprocess_option_combined_stdout_stderr;
-            if (0) options |= subprocess_option_inherit_environment;
-            if (0) options |= subprocess_option_enable_async;
-            if (0) options |= subprocess_option_no_window;
+            if (1) options |= subprocess_option_inherit_environment;
+            if (1) options |= subprocess_option_enable_async;
+            if (1) options |= subprocess_option_no_window;
             if (1) options |= subprocess_option_search_user_path;
         }
         break;
@@ -469,6 +486,8 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS(process, Process);
         {
+            WREN_METHOD(process, Process, true, system, "(cmd)", "(_)");
+
             /* Easy mode - runs a program and blocks until it's finished, allowing std(out/err) to behave normally.
              */
             if (!wrenCode(vm,

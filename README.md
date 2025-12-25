@@ -28,6 +28,7 @@
 - File-like object that writes to memory.
 - Thread and thread pool objects.
 
+- regular expressions (regex) module.
 - sqlite module.
 - date and time module.
 - json module.
@@ -37,3 +38,10 @@
 - csv module.
 - logging module.
 - curses module.
+
+- openssl wrapper.
+- libuv wrapper.
+- zeromq wrapper.
+- sdl wrapper.
+- opengl wrapper.
+- openal wrapper.

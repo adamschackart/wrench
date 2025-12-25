@@ -459,6 +459,14 @@ WRENCH_DECL(void, SetFileFreeCallback, (WrenVM* vm, wrenFileFreeFn callback));
 WRENCH_DECL(void*, DefaultFileRead, (WrenVM* vm, const char* name, size_t* size));
 WRENCH_DECL(void, DefaultFileFree, (WrenVM* vm, void* data, size_t size));
 
+/* Allocate and free temporary memory in a stack-like manner.
+ */
+WRENCH_DECL(void*, StackMalloc, (WrenVM* vm, size_t size));
+WRENCH_DECL(void*, StackCalloc, (WrenVM* vm, size_t num, size_t size));
+WRENCH_DECL(void*, StackRealloc, (WrenVM* vm, void* ptr, size_t size));
+WRENCH_DECL(char*, StackStringCopy, (WrenVM* vm, const char* str, size_t* length));
+WRENCH_DECL(void, StackFree, (WrenVM* vm, void* ptr, size_t size));
+
 /* Load code from disk. Name is prefixed by base path & suffixed with ".wren".
  */
 WRENCH_DECL(const char*, LoadSourceFile, (WrenVM* vm, const char* name, size_t* num_chars));
@@ -585,6 +593,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #if !_WIN32 && !WRENCH_NO_POSIX_HEADERS
     #include <dlfcn.h>
     #include <signal.h>
+    #include <unistd.h>
 #endif
 
 /* TODO: Some of these #defines are vestigial.
@@ -662,11 +671,26 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_stat
 #define wrench_stat stat
 #endif
-#ifndef wrench_stderr
-#define wrench_stderr stderr
+/*
+ * XXX: Since we #undef std(err/out), we must re-implement win32 definitions.
+ */
+#if !defined(wrench_stderr)
+    #if _MSC_VER
+        #define wrench_stderr (__acrt_iob_func(2))
+    #elif __APPLE__
+        #define wrench_stderr __stderrp
+    #else
+        #define wrench_stderr stderr
+    #endif
 #endif
-#ifndef wrench_stdout
-#define wrench_stdout stdout
+#if !defined(wrench_stdout)
+    #if _MSC_VER
+        #define wrench_stdout (__acrt_iob_func(1))
+    #elif __APPLE__
+        #define wrench_stdout __stdoutp
+    #else
+        #define wrench_stdout stdout
+    #endif
 #endif
 #if !defined(wrench_strcasecmp)
     #if _WIN32
@@ -693,6 +717,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_strstr
 #define wrench_strstr strstr
+#endif
+#ifndef wrench_system
+#define wrench_system system
 #endif
 #ifndef wrench_tolower
 #define wrench_tolower tolower
@@ -1007,6 +1034,10 @@ typedef struct WrenchContext
     char* source_code_alloc_base;
     char* source_code_alloc_end;
     char* source_code_alloc_mark;
+
+    char* stack_alloc_base;
+    char* stack_alloc_end;
+    char* stack_alloc_mark;
 
     WrenchModule* module_being_built;
     char* module_builder_base;
@@ -1772,6 +1803,53 @@ static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name
     }
 }
 
+static void* wrenchStackMalloc(WrenchContext* context, size_t size)
+{
+    char* ptr = context->stack_alloc_mark;
+    char* end = ptr + size;
+
+    if (end > context->stack_alloc_end)
+    {
+        return NULL;
+    }
+
+    context->stack_alloc_mark = end;
+    return ptr;
+}
+
+static void* wrenchStackCalloc(WrenchContext* context, size_t num, size_t size)
+{
+    WRENCH_STUB(); return NULL;
+}
+
+static void* wrenchStackRealloc(WrenchContext* context, void* ptr, size_t size)
+{
+    WRENCH_STUB(); return NULL;
+}
+
+static char* wrenchStackStringCopy(WrenchContext* context, const char* str, size_t* length)
+{
+    WRENCH_STUB(); return NULL;
+}
+
+static void wrenchStackFree(WrenchContext* context, void* ptr, size_t size)
+{
+    if (0)
+    {
+        wrench_assert(ptr != NULL, "");
+    }
+    else if (ptr == NULL)
+    {
+        return;
+    }
+
+    wrench_assert((char*)ptr >= context->stack_alloc_base, "%p < %p", ptr, context->stack_alloc_base);
+    wrench_assert((char*)ptr < context->stack_alloc_end, "%p >= %p", ptr, context->stack_alloc_end);
+    wrench_assert((char*)ptr == context->stack_alloc_mark - size, "%p freed out of stack order", ptr);
+
+    context->stack_alloc_mark = (char*)ptr;
+}
+
 static bool wrenchRegisterModuleImpl(WrenchContext* context, WrenchModule* node, const char* source, size_t num_chars, bool copy_source)
 {
     if (copy_source && source != NULL)
@@ -2229,7 +2307,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->vm = vm;
 
     #ifndef WRENCH_NODE_BUFFER_SIZE
-    #define WRENCH_NODE_BUFFER_SIZE (1024 * 1024 * 1)
+    #define WRENCH_NODE_BUFFER_SIZE (1024 * 1024 * 2)
     #endif
     context->node_alloc_base = (char*)wrench_malloc(WRENCH_NODE_BUFFER_SIZE);
 
@@ -2262,7 +2340,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     #define WRENCH_MEMORY_POOL_BLOCK_SIZE 64
     #endif
     #ifndef WRENCH_MEMORY_POOL_BLOCK_COUNT
-    #define WRENCH_MEMORY_POOL_BLOCK_COUNT ((1024 * 1024 * 1) / (WRENCH_MEMORY_POOL_BLOCK_SIZE))
+    #define WRENCH_MEMORY_POOL_BLOCK_COUNT ((1024 * 1024 * 2) / (WRENCH_MEMORY_POOL_BLOCK_SIZE))
     #endif
 
     if (!wrenchMemoryPoolInit(&context->memory_pool, WRENCH_MEMORY_POOL_BLOCK_SIZE, WRENCH_MEMORY_POOL_BLOCK_COUNT))
@@ -2273,6 +2351,23 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
 
         return NULL;
     }
+
+    #ifndef WRENCH_STACK_BUFFER_SIZE
+    #define WRENCH_STACK_BUFFER_SIZE (1024 * 1024 * 2)
+    #endif
+    context->stack_alloc_base = (char*)wrench_malloc(WRENCH_STACK_BUFFER_SIZE);
+
+    if (context->stack_alloc_base == NULL)
+    {
+        wrenchMemoryPoolFree(&context->memory_pool);
+
+        wrench_free(context->source_code_alloc_base);
+        wrench_free(context->node_alloc_base);
+        wrench_free(context);
+    }
+
+    context->stack_alloc_end = context->stack_alloc_base + WRENCH_STACK_BUFFER_SIZE;
+    context->stack_alloc_mark = context->stack_alloc_base;
 
     context->output_file = wrench_stdout;
 
@@ -2375,6 +2470,7 @@ static size_t wrenchGlobalQuitFuncCount;
     #include <wrench_file.c>
     #include <wrench_image.c>
     //#include <wrench_tcc.c>
+    #include <wrench_platform.c>
     #include <wrench_process.c>
     #include <wrench_rect.c>
     #include <wrench_util.c>
@@ -2467,6 +2563,12 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             return NULL;
         }*/
 
+        if (!platformWrenInit(vm))
+        {
+            wrenFreeExtendedVM(vm, false);
+            return NULL;
+        }
+
         if (!processWrenInit(vm))
         {
             wrenFreeExtendedVM(vm, false);
@@ -2547,6 +2649,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         utilWrenQuit();
         rectWrenQuit();
         processWrenQuit();
+        platformWrenQuit();
         //tccWrenQuit();
         imageWrenQuit();
         fileWrenQuit();
@@ -2906,6 +3009,82 @@ WRENCH_IMPL(void*, DefaultFileRead, (WrenVM* vm, const char* name, size_t* file_
 WRENCH_IMPL(void, DefaultFileFree, (WrenVM* vm, void* data, size_t size))
 {
     wrench_free(data);
+}
+
+WRENCH_IMPL(void*, StackMalloc, (WrenVM* vm, size_t size))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchStackMalloc(context, size);
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+WRENCH_IMPL(void*, StackCalloc, (WrenVM* vm, size_t num, size_t size))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchStackCalloc(context, num, size);
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+WRENCH_IMPL(void*, StackRealloc, (WrenVM* vm, void* ptr, size_t size))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchStackRealloc(context, ptr, size);
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+WRENCH_IMPL(char*, StackStringCopy, (WrenVM* vm, const char* str, size_t* length))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchStackStringCopy(context, str, length);
+    }
+    else
+    {
+        if (length != NULL)
+        {
+            *length = 0;
+        }
+
+        return NULL;
+    }
+}
+
+WRENCH_IMPL(void, StackFree, (WrenVM* vm, void* ptr, size_t size))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        wrenchStackFree(context, ptr, size);
+    }
 }
 
 WRENCH_IMPL(const char*, LoadSourceFile, (WrenVM* vm, const char* name, size_t* num_chars))
@@ -3324,6 +3503,17 @@ WRENCH_IMPL(WrenLoadModuleResult, DefaultLoadModule, (WrenVM* vm, const char* na
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
 
+    /* Check to see if we've already loaded. This only happens when we've registered modules
+     * statically, and those same modules also exist as dynamic libraries (must be ignored).
+     */
+    WrenchModule* module = wrenchGetModule(context, name, NULL);
+
+    if (module != NULL)
+    {
+        result.source = module->source;
+        return result;
+    }
+
     void* library = wrenchLoadLibrary(context, name);
 
     if (library != NULL)
@@ -3344,7 +3534,7 @@ WRENCH_IMPL(WrenLoadModuleResult, DefaultLoadModule, (WrenVM* vm, const char* na
         }
     }
 
-    WrenchModule* module = wrenchGetModule(context, name, NULL);
+    module = wrenchGetModule(context, name, NULL);
 
     if (module != NULL)
     {
@@ -3544,7 +3734,50 @@ int WRENCH_MAIN(int argc, char** argv)
         default: break;
     }
 
-    // TODO: If the main module has a main() function, call it here.
+    // NOTE: If the main module has a main() function, call it here.
+    if (wrenHasVariable(vm, "main", "main"))
+    {
+        WrenHandle* main_handle = wrenMakeCallHandle(vm, "call()");
+
+        if (main_handle != NULL)
+        {
+            wrenEnsureSlots(vm, 1); // Set receiver.
+            wrenGetVariable(vm, "main", "main", 0);
+
+            switch (wrenCall(vm, main_handle))
+            {
+                case WREN_RESULT_SUCCESS:
+                {
+                    //
+                }
+                break;
+
+                case WREN_RESULT_COMPILE_ERROR:
+                {
+                    // TODO
+                }
+                break;
+
+                case WREN_RESULT_RUNTIME_ERROR:
+                {
+                    // TODO
+                }
+                break;
+
+                default:
+                {
+                    wrench_assert(0, "");
+                }
+                break;
+            }
+
+            wrenReleaseHandle(vm, main_handle);
+        }
+        else
+        {
+            // TODO
+        }
+    }
 
     #ifndef WRENCH_MAIN_QUIT
     #define WRENCH_MAIN_QUIT() (void)0

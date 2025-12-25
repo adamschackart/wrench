@@ -2,6 +2,9 @@
 # Copyright (c) 2012-2026 Adam Schackart / "AJ Hackman", all rights reserved.
 # Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 # ------------------------------------------------------------------------------
+# Easy Windows build in Developer Powershell for VS 2022 (must have libraries):
+# cl /nologo /Od /DEBUG /DWRENCH_STDLIB=1 /I. /Iwren\src\include /Iwren\src\optional /Iwren\src\vm wrench_main.c wren\src\optional\wren_opt_meta.c wren\src\optional\wren_opt_random.c wren\src\vm\wren_compiler.c wren\src\vm\wren_core.c wren\src\vm\wren_debug.c wren\src\vm\wren_primitive.c wren\src\vm\wren_utils.c wren\src\vm\wren_value.c wren\src\vm\wren_vm.c
+# ------------------------------------------------------------------------------
 
 if [ ! -d "stb" ]; then
     git clone https://github.com/nothings/stb.git
@@ -53,6 +56,7 @@ else
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -o run_wren wrench_main.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o file.so wrench_file.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o image.so wrench_image.c wren.o -lm -ldl &
+    $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o platform.so wrench_platform.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o process.so wrench_process.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o rect.so wrench_rect.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o util.so wrench_util.c wren.o -lm -ldl &

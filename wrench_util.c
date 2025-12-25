@@ -118,7 +118,7 @@ static void util_StringUtil_toUpper(WrenVM* vm)
     const char* s = wrenGetSlotString(vm, 1);
     const size_t length = wrench_strlen(s);
 
-    char* p = (char*)wrench_malloc(length + 1);
+    char* p = (char*)wrenStackMalloc(vm, length + 1);
 
     if (p == NULL)
     {
@@ -136,7 +136,7 @@ static void util_StringUtil_toUpper(WrenVM* vm)
     p[length] = '\0';
 
     wrenSetSlotString(vm, 0, (const char*)p);
-    wrench_free(p);
+    wrenStackFree(vm, p, length + 1);
 }
 
 static void util_StringUtil_toLower(WrenVM* vm)
@@ -144,7 +144,7 @@ static void util_StringUtil_toLower(WrenVM* vm)
     const char* s = wrenGetSlotString(vm, 1);
     const size_t length = wrench_strlen(s);
 
-    char* p = (char*)wrench_malloc(length + 1);
+    char* p = (char*)wrenStackMalloc(vm, length + 1);
 
     if (p == NULL)
     {
@@ -162,7 +162,7 @@ static void util_StringUtil_toLower(WrenVM* vm)
     p[length] = '\0';
 
     wrenSetSlotString(vm, 0, (const char*)p);
-    wrench_free(p);
+    wrenStackFree(vm, p, length + 1);
 }
 
 static void util_StringUtil_caseCompare(WrenVM* vm)

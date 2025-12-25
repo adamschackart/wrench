@@ -16,49 +16,114 @@
 --------------------------------------------------------------------------------
 */
 
-static void file_Path_list_entry(WrenVM* vm, const char* path, bool recursive, bool include_subdirectories)
+static void file_Path_exists(WrenVM* vm)
 {
-    tinydir_dir dir;
+    const char* filename = wrenGetSlotString(vm, 1);
 
-    if (tinydir_open_sorted(&dir, path) < 0)
+    #if _WIN32
+    {
+        DWORD dwAttrib = GetFileAttributesA(filename);
+
+        #if 0
+        {
+            if (dwAttrib != INVALID_FILE_ATTRIBUTES &&
+                dwAttrib & FILE_ATTRIBUTE_DIRECTORY)
+            {
+                wrenSetSlotBool(vm, 0, true);
+            }
+            else
+            {
+                wrenSetSlotBool(vm, 0, PathFileExistsA(filename));
+            }
+        }
+        #else
+        {
+            wrenSetSlotBool(vm, 0, dwAttrib != INVALID_FILE_ATTRIBUTES);
+        }
+        #endif
+    }
+    #else
+    {
+        wrenSetSlotBool(vm, 0, access(filename, F_OK) == 0);
+    }
+    #endif
+}
+
+static void file_Path_isDirectory(WrenVM* vm)
+{
+    const char* path = wrenGetSlotString(vm, 1);
+
+    #if _WIN32
+    {
+        #if 1
+        {
+            const DWORD dwAttrib = GetFileAttributesA(path);
+
+            wrenSetSlotBool(vm, 0, (dwAttrib != INVALID_FILE_ATTRIBUTES &&
+                                    dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+        }
+        #else
+        {
+            wrenSetSlotBool(vm, 0, PathIsDirectoryA(path));
+        }
+        #endif
+    }
+    #else
+    {
+        struct stat statbuf;
+
+        if (stat(path, &statbuf) != 0)
+        {
+            wrenSetSlotBool(vm, 0, false);
+        }
+        else
+        {
+            wrenSetSlotBool(vm, 0, S_ISDIR(statbuf.st_mode));
+        }
+    }
+    #endif
+}
+
+static void file_Path_isFile(WrenVM* vm)
+{
+    const char* path = wrenGetSlotString(vm, 1);
+
+    #if _WIN32
+    {
+        const DWORD dwAttrib = GetFileAttributesA(path);
+
+        wrenSetSlotBool(vm, 0, (dwAttrib != INVALID_FILE_ATTRIBUTES && \
+                            ((dwAttrib & FILE_ATTRIBUTE_NORMAL) != 0 ||
+                            (dwAttrib & FILE_ATTRIBUTE_ARCHIVE) != 0)));
+    }
+    #else
+    {
+        struct stat statbuf;
+
+        if (stat(path, &statbuf) != 0)
+        {
+            wrenSetSlotBool(vm, 0, false);
+        }
+        else
+        {
+            wrenSetSlotBool(vm, 0, S_ISREG(statbuf.st_mode));
+        }
+    }
+    #endif
+}
+
+static void file_Path_remove(WrenVM* vm)
+{
+    const char* path = wrenGetSlotString(vm, 1);
+
+    if (remove(path) != 0)
     {
         char error[1024 * 4];
-        wrench_snprintf(error, sizeof(error), "Failed to list path \"%s\".", path);
+        wrench_snprintf(error, sizeof(error), "Failed to remove file \"%s\".", path);
 
         wrenSetSlotString(vm, 0, (const char*)error);
         wrenAbortFiber(vm, 0);
-
-        return;
     }
-
-    for (size_t i = 0; i < dir.n_files; i++)
-    {
-        tinydir_file file;
-        tinydir_readfile_n(&dir, &file, i);
-
-        if (wrench_strcmp(file.name, ".") == 0 || wrench_strcmp(file.name, "..") == 0)
-        {
-            continue;
-        }
-
-        if (file.is_dir)
-        {
-            if (recursive)
-            {
-                file_Path_list_entry(vm, file.path, recursive, include_subdirectories);
-            }
-
-            if (!include_subdirectories)
-            {
-                continue;
-            }
-        }
-
-        wrenSetSlotString(vm, 1, file.path);
-        wrenInsertInList(vm, 0, -1, 1);
-    }
-
-    tinydir_close(&dir);
 }
 
 static void file_Path_resolve(WrenVM* vm)
@@ -127,6 +192,51 @@ static void file_Path_resolve(WrenVM* vm)
     #endif
 
     wrenSetSlotString(vm, 0, (const char*)out);
+}
+
+static void file_Path_list_entry(WrenVM* vm, const char* path, bool recursive, bool include_subdirectories)
+{
+    tinydir_dir dir;
+
+    if (tinydir_open_sorted(&dir, path) < 0)
+    {
+        char error[1024 * 4];
+        wrench_snprintf(error, sizeof(error), "Failed to list path \"%s\".", path);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    for (size_t i = 0; i < dir.n_files; i++)
+    {
+        tinydir_file file;
+        tinydir_readfile_n(&dir, &file, i);
+
+        if (wrench_strcmp(file.name, ".") == 0 || wrench_strcmp(file.name, "..") == 0)
+        {
+            continue;
+        }
+
+        if (file.is_dir)
+        {
+            if (recursive)
+            {
+                file_Path_list_entry(vm, file.path, recursive, include_subdirectories);
+            }
+
+            if (!include_subdirectories)
+            {
+                continue;
+            }
+        }
+
+        wrenSetSlotString(vm, 1, file.path);
+        wrenInsertInList(vm, 0, -1, 1);
+    }
+
+    tinydir_close(&dir);
 }
 
 static void file_Path_list(WrenVM* vm)
@@ -388,7 +498,16 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
     {
         WREN_BEGIN_CLASS_EX(file, Path, NULL, NULL);
         {
-            // TODO: exists
+            if (0)
+            {
+                // XXX FIXME: This only works on files, not directories.
+                WREN_METHOD(file, Path, true, exists, "(path)", "(_)");
+            }
+            else
+            {
+                WREN_CODE("static exists(path) { isDirectory(path) || isFile(path) }");
+            }
+
             // TODO: current
             // TODO: base
 
@@ -411,14 +530,27 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             // TODO: split
             // TODO: join
 
-            // TODO: isDirectory
-            // TODO: isFile
+            WREN_METHOD(file, Path, true, isDirectory, "(path)", "(_)");
+            WREN_METHOD(file, Path, true, isFile, "(path)", "(_)");
 
             // TODO: createDirectory
             // TODO: createFile
             // TODO: copyFile
             // TODO: moveFile
-            // TODO: deleteFile
+
+            WREN_METHOD(file, Path, true, remove, "(path)", "(_)");
+
+            if (!wrenCode(vm,
+
+            "static tryRemove(path) {\n"
+                "var fiber = Fiber.new {\n"
+                    "remove(path)\n"
+                "}\n"
+
+                "return fiber.try()\n"
+            "}\n"
+
+            )) { return false; }
 
             WREN_METHOD(file, Path, true, resolve, "(path)", "(_)");
 

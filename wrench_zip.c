@@ -8,6 +8,10 @@
 #endif
 #include <wrench_zip.h>
 
+#ifdef MICROSOFT_WINDOWS_WINBASE_H_DEFINE_INTERLOCKED_CPLUSPLUS_OVERLOADS
+#undef MICROSOFT_WINDOWS_WINBASE_H_DEFINE_INTERLOCKED_CPLUSPLUS_OVERLOADS
+#endif
+
 #if !defined(ZIP_H)
     /*
      * Override memory allocation.
