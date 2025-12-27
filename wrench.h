@@ -2552,16 +2552,89 @@ static size_t wrenchGlobalQuitFuncCount;
 /* Standard library modules are normally DLLs, but we can include them inline.
  */
 #if WRENCH_STDLIB
+    #ifndef WRENCH_HAVE_CONFIG
+    #define WRENCH_HAVE_CONFIG 0
+    #endif
+    #if WRENCH_HAVE_CONFIG
+    #include <wrench_config.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_FILE
+    #define WRENCH_HAVE_FILE 1
+    #endif
+    #if WRENCH_HAVE_FILE
     #include <wrench_file.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_IMAGE
+    #define WRENCH_HAVE_IMAGE 1
+    #endif
+    #if WRENCH_HAVE_IMAGE
     #include <wrench_image.c>
-    //#include <wrench_tcc.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_TCC
+    #define WRENCH_HAVE_TCC 0
+    #endif
+    #if WRENCH_HAVE_TCC
+    #include <wrench_tcc.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_PLATFORM
+    #define WRENCH_HAVE_PLATFORM 1
+    #endif
+    #if WRENCH_HAVE_PLATFORM
     #include <wrench_platform.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_PROCESS
+    #define WRENCH_HAVE_PROCESS 1
+    #endif
+    #if WRENCH_HAVE_PROCESS
     #include <wrench_process.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_PROJECT
+    #define WRENCH_HAVE_PROJECT 0
+    #endif
+    #if WRENCH_HAVE_PROJECT
+    #include <wrench_project.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_RECT
+    #define WRENCH_HAVE_RECT 1
+    #endif
+    #if WRENCH_HAVE_RECT
     #include <wrench_rect.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_UTIL
+    #define WRENCH_HAVE_UTIL 1
+    #endif
+    #if WRENCH_HAVE_UTIL
     #include <wrench_util.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_VECTOR
+    #define WRENCH_HAVE_VECTOR 1
+    #endif
+    #if WRENCH_HAVE_VECTOR
     #include <wrench_vector.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_VM
+    #define WRENCH_HAVE_VM 1
+    #endif
+    #if WRENCH_HAVE_VM
     #include <wrench_vm.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_ZIP
+    #define WRENCH_HAVE_ZIP 1
+    #endif
+    #if WRENCH_HAVE_ZIP
     #include <wrench_zip.c>
+    #endif
 #endif
 
 /* ===== [ public API ] ===================================================== */
@@ -2630,65 +2703,125 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
 
     #if WRENCH_STDLIB
     {
-        if (!fileWrenInit(vm))
+        #if WRENCH_HAVE_CONFIG
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!configWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_CONFIG */
 
-        if (!imageWrenInit(vm))
+        #if WRENCH_HAVE_FILE
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!fileWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_FILE */
 
-        /*if (!tccWrenInit(vm))
+        #if WRENCH_HAVE_IMAGE
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
-        }*/
-
-        if (!platformWrenInit(vm))
-        {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!imageWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_IMAGE */
 
-        if (!processWrenInit(vm))
+        #if WRENCH_HAVE_TCC
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!tccWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_TCC */
 
-        if (!rectWrenInit(vm))
+        #if WRENCH_HAVE_PLATFORM
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!platformWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_PLATFORM */
 
-        if (!utilWrenInit(vm))
+        #if WRENCH_HAVE_PROCESS
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!processWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_PROCESS */
 
-        if (!vectorWrenInit(vm))
+        #if WRENCH_HAVE_PROJECT
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!projectWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_PROJECT */
 
-        if (!vmWrenInit(vm))
+        #if WRENCH_HAVE_RECT
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!rectWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_RECT */
 
-        if (!zipWrenInit(vm))
+        #if WRENCH_HAVE_UTIL
         {
-            wrenFreeExtendedVM(vm, false);
-            return NULL;
+            if (!utilWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
         }
+        #endif /* WRENCH_HAVE_UTIL */
+
+        #if WRENCH_HAVE_VECTOR
+        {
+            if (!vectorWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_VECTOR */
+
+        #if WRENCH_HAVE_VM
+        {
+            if (!vmWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_VM */
+
+        #if WRENCH_HAVE_ZIP
+        {
+            if (!zipWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_ZIP */
     }
     #endif /* WRENCH_STDLIB */
 
@@ -2728,16 +2861,77 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
 
     #if WRENCH_STDLIB
     {
-        zipWrenQuit();
-        vmWrenQuit();
-        vectorWrenQuit();
-        utilWrenQuit();
-        rectWrenQuit();
-        processWrenQuit();
-        platformWrenQuit();
-        //tccWrenQuit();
-        imageWrenQuit();
-        fileWrenQuit();
+        #if WRENCH_HAVE_ZIP
+        {
+            zipWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_ZIP */
+
+        #if WRENCH_HAVE_VM
+        {
+            vmWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_VM */
+
+        #if WRENCH_HAVE_VECTOR
+        {
+            vectorWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_VECTOR */
+
+        #if WRENCH_HAVE_UTIL
+        {
+            utilWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_UTIL */
+
+        #if WRENCH_HAVE_RECT
+        {
+            rectWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_RECT */
+
+        #if WRENCH_HAVE_PROJECT
+        {
+            projectWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_PROJECT */
+
+        #if WRENCH_HAVE_PROCESS
+        {
+            processWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_PROCESS */
+
+        #if WRENCH_HAVE_PLATFORM
+        {
+            platformWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_PLATFORM */
+
+        #if WRENCH_HAVE_TCC
+        {
+            tccWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_TCC */
+
+        #if WRENCH_HAVE_IMAGE
+        {
+            imageWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_IMAGE */
+
+        #if WRENCH_HAVE_FILE
+        {
+            fileWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_FILE */
+
+        #if WRENCH_HAVE_CONFIG
+        {
+            configWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_CONFIG */
     }
     #endif /* WRENCH_STDLIB */
 }

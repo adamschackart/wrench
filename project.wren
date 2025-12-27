@@ -1518,7 +1518,10 @@ var main = Fn.new {
         var headers = Project.new(null, "headers")
 
         HeaderNode.new(headers, "config", "module", "config.wren", "wrench_config.c")
+        project.define("WRENCH_HAVE_CONFIG")
+
         HeaderNode.new(headers, "project", "module", "project.wren", "wrench_project.c")
+        project.define("WRENCH_HAVE_PROJECT")
 
         if (command == "build") {
             headers.build()
