@@ -112,11 +112,86 @@ static void file_Path_isFile(WrenVM* vm)
     #endif
 }
 
+static void file_Path_createDirectory(WrenVM* vm)
+{
+    const char* path = wrenGetSlotString(vm, 1);
+
+    #if _WIN32
+    {
+        if (_mkdir(path) != 0)
+        {
+            goto failed;
+        }
+    }
+    #else
+    {
+        if (mkdir(path, 0777) != 0)
+        {
+            goto failed;
+        }
+    }
+    #endif
+
+    return;
+
+    failed:
+    {
+        char error[1024 * 4];
+        wrench_snprintf(error, sizeof(error), "Failed to create directory \"%s\"", path);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+    }
+}
+
+static void file_Path_createFile(WrenVM* vm)
+{
+    const char* path = wrenGetSlotString(vm, 1);
+    char error[1024 * 4];
+
+    /* If the file already exists, don't touch its contents.
+     */
+    FILE* file = wrench_fopen(path, "a");
+
+    if (file != NULL)
+    {
+        if (fclose(file) != 0)
+        {
+            wrench_snprintf(error, sizeof(error), "Failed to close file \"%s\"", path);
+
+            wrenSetSlotString(vm, 0, (const char*)error);
+            wrenAbortFiber(vm, 0);
+        }
+    }
+    else
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to create file \"%s\"", path);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+    }
+}
+
+static void file_Path_move(WrenVM* vm)
+{
+    const char* old_name = wrenGetSlotString(vm, 1);
+    const char* new_name = wrenGetSlotString(vm, 2);
+
+    if (wrench_rename(old_name, new_name) != 0)
+    {
+        char error[1024 * 4];
+        wrench_snprintf(error, sizeof(error), "Failed to move \"%s\" to \"%s\".", old_name, new_name);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+    }
+}
+
 static void file_Path_remove(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
 
-    if (remove(path) != 0)
+    if (wrench_remove(path) != 0)
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "Failed to remove file \"%s\".", path);
@@ -533,11 +608,36 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_METHOD(file, Path, true, isDirectory, "(path)", "(_)");
             WREN_METHOD(file, Path, true, isFile, "(path)", "(_)");
 
-            // TODO: createDirectory
-            // TODO: createFile
-            // TODO: copyFile
-            // TODO: moveFile
+            WREN_METHOD(file, Path, true, createDirectory, "(path)", "(_)");
+            WREN_METHOD(file, Path, true, createFile, "(path)", "(_)");
 
+            if (!wrenCode(vm,
+
+            "static copyDirectory(old_name, new_name) {\n"
+                "Fiber.abort(\"TODO\")\n"
+            "}\n"
+
+            "static copyFile(old_name, new_name) {\n"
+                "var old_file = File.open(old_name, \"rb\")\n"
+                "var new_file = File.open(new_name, \"wb\")\n"
+
+                "new_file.write(old_file.read())\n"
+
+                "old_file.close()\n"
+                "new_file.close()\n"
+            "}\n"
+
+            "static copy(old_name, new_name) {\n"
+                "if (isDirectory(old_name)) {\n"
+                    "return copyDirectory(old_name, new_name)\n"
+                "} else {\n"
+                    "return copyFile(old_name, new_name)\n"
+                "}\n"
+            "}\n"
+
+            )) { return false; }
+
+            WREN_METHOD(file, Path, true, move, "(old_name, new_name)", "(_,_)");
             WREN_METHOD(file, Path, true, remove, "(path)", "(_)");
 
             if (!wrenCode(vm,

@@ -221,10 +221,32 @@ static void vm_WrenVM_basePath_set(WrenVM* vm)
     vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
 
-    if (!wrenSetBasePath(self->vm, wrenGetSlotString(vm, 1)))
+    switch (wrenGetSlotType(vm, 1))
     {
-        wrenSetSlotString(vm, 0, wrenGetErrorString(self->vm));
-        wrenAbortFiber(vm, 0);
+        case WREN_TYPE_STRING:
+        {
+            if (!wrenSetBasePath(self->vm, wrenGetSlotString(vm, 1)))
+            {
+                wrenSetSlotString(vm, 0, wrenGetErrorString(self->vm));
+                wrenAbortFiber(vm, 0);
+            }
+        }
+        break;
+
+        case WREN_TYPE_NULL:
+        {
+            if (!wrenSetBasePath(self->vm, NULL))
+            {
+                wrench_assert(0, "unreachable");
+            }
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "");
+        }
+        break;
     }
 }
 
@@ -512,6 +534,8 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
 
             // NOTE: We don't expose a `foreignLibraryLoadEnabled` property here,
             // to prevent malicious scripts from escaping sandboxed environments.
+
+            // NOTE: Same with `wrenLibraryLoadEnabled`.
 
             WREN_PROPERTY(vm, WrenVM, false, outputFile);
             WREN_PROPERTY(vm, WrenVM, false, errorString);

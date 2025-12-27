@@ -15,6 +15,12 @@ extern "C" {
 } /* extern "C" */
 #endif
 
+/* Disable MSVC warnings about fopen() etc.
+ */
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
 #if !WRENCH_NO_CSTDLIB
     /*
      * For uint8_t.
@@ -410,6 +416,11 @@ WRENCH_DECL(void, RegisterGlobalQuitFunction, (wrenLibraryQuitFn quit));
 WRENCH_DECL(bool, GetForeignLibraryLoadEnabled, (WrenVM* vm));
 WRENCH_DECL(void, SetForeignLibraryLoadEnabled, (WrenVM* vm, bool enabled));
 
+/* Disables loading of Wren modules via "import".
+ */
+WRENCH_DECL(bool, GetWrenLibraryLoadEnabled, (WrenVM* vm));
+WRENCH_DECL(void, SetWrenLibraryLoadEnabled, (WrenVM* vm, bool enabled));
+
 /* System.write and System.print output.
  */
 WRENCH_DECL(FILE*, GetOutputFile, (WrenVM* vm));
@@ -664,6 +675,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_realpath
 #define wrench_realpath realpath
+#endif
+#ifndef wrench_remove
+#define wrench_remove remove
+#endif
+#ifndef wrench_rename
+#define wrench_rename rename
 #endif
 #ifndef wrench_snprintf
 #define wrench_snprintf snprintf
@@ -1041,7 +1058,9 @@ typedef struct WrenchContext
 
     WrenchModule* module_being_built;
     char* module_builder_base;
+
     bool foreign_library_load_disabled;
+    bool wren_library_load_disabled;
 
     wrenFileReadFn file_read_callback;
     wrenFileFreeFn file_free_callback;
@@ -1392,6 +1411,16 @@ static void wrenchSetForeignLibraryLoadEnabled(WrenchContext* context, bool valu
     context->foreign_library_load_disabled = !value;
 }
 
+static bool wrenchGetWrenLibraryLoadEnabled(WrenchContext* context)
+{
+    return !context->wren_library_load_disabled;
+}
+
+static void wrenchSetWrenLibraryLoadEnabled(WrenchContext* context, bool value)
+{
+    context->wren_library_load_disabled = !value;
+}
+
 static FILE* wrenchGetOutputFile(WrenchContext* context)
 {
     wrench_assert(context->output_file != NULL, "");
@@ -1637,8 +1666,15 @@ static bool wrenchSetBasePath(WrenchContext* context, const char* path)
 {
     wrench_free(context->base_path);
 
-    context->base_path = wrench_strdup(path);
-    return context->base_path != NULL;
+    if (path != NULL)
+    {
+        context->base_path = wrench_strdup(path);
+        return context->base_path != NULL;
+    }
+    else
+    {
+        return true;
+    }
 }
 
 static wrenFileReadFn wrenchGetFileReadCallback(WrenchContext* context)
@@ -1666,6 +1702,14 @@ static void wrenchSetFileFreeCallback(WrenchContext* context, wrenFileFreeFn cal
 static const char* wrenchLoadSourceFileEx(WrenchContext* context, const char* name, size_t* num_chars)
 {
     char path[1024 * 4], error[1024 * 4];
+
+    if (!wrenchGetWrenLibraryLoadEnabled(context))
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to open \"%s\" - Wren code loading disabled.", name);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return NULL;
+    }
 
     if (wrench_snprintf(path, sizeof(path), "%s%s.wren", wrenchGetBasePath(context), name) < 0)
     {
@@ -1739,6 +1783,16 @@ static const char* wrenchLoadSourceFileEx(WrenchContext* context, const char* na
 
 static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name, size_t* num_chars)
 {
+    if (!wrenchGetWrenLibraryLoadEnabled(context))
+    {
+        char error[1024 * 4];
+
+        wrench_snprintf(error, sizeof(error), "Failed to open \"%s\" - Wren code loading disabled.", name);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return NULL;
+    }
+
     if (wrench_strstr(name, ".wren") != NULL) // Strip file extension.
     {
         char b[1024], *src = (char*)name, *dst = b;
@@ -1852,14 +1906,22 @@ static void wrenchStackFree(WrenchContext* context, void* ptr, size_t size)
 
 static bool wrenchRegisterModuleImpl(WrenchContext* context, WrenchModule* node, const char* source, size_t num_chars, bool copy_source)
 {
+    char error[1024 * 4];
+
+    if (!wrenchGetWrenLibraryLoadEnabled(context))
+    {
+        wrench_snprintf(error, sizeof(error), "Failed to register \"%s\" - Wren code loading disabled.", node->name);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return false;
+    }
+
     if (copy_source && source != NULL)
     {
         node->source = wrenchSourceCodeCopyEx(context, source, num_chars);
 
         if (node->source == NULL)
         {
-            char error[1024 * 4];
-
             wrench_snprintf(error, sizeof(error), "Failed to copy source code for \"%s\".", node->name);
             wrenchSetErrorString(context, (const char*)error);
 
@@ -1893,6 +1955,16 @@ static bool wrenchBeginModule(WrenchContext* context, const char* name)
 
     wrench_assert(context->module_builder_base == NULL, "began module \"%s\" inside begin/end block", name);
 
+    if (!wrenchGetWrenLibraryLoadEnabled(context))
+    {
+        char error[1024 * 4];
+
+        wrench_snprintf(error, sizeof(error), "Failed to begin \"%s\" - Wren code loading disabled.", name);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return false;
+    }
+
     context->module_builder_base = context->source_code_alloc_mark;
     context->module_being_built = (WrenchModule*)wrenchNodeAlloc(context, sizeof(WrenchModule), true);
 
@@ -1920,6 +1992,9 @@ static bool wrenchBeginModule(WrenchContext* context, const char* name)
 
 static bool wrenchCodeEx(WrenchContext* context, const char* source, size_t num_chars)
 {
+    wrench_assert(context->module_builder_base != NULL, "");
+    wrench_assert(context->module_being_built != NULL, "");
+
     char* data = context->source_code_alloc_mark;
     char* next = context->source_code_alloc_mark + num_chars;
 
@@ -1977,6 +2052,16 @@ static bool wrenchRegisterModuleEx(WrenchContext* context, const char* moduleNam
 {
     // TODO: Give some thought as to how this might interact with module resolution (have to find mangled names/paths).
     wrench_assert(wrenchGetModule(context, moduleName, NULL) == NULL, "module \"%s\" already registered", moduleName);
+
+    if (!wrenchGetWrenLibraryLoadEnabled(context))
+    {
+        char error[1024 * 4];
+
+        wrench_snprintf(error, sizeof(error), "Failed to register \"%s\" - Wren code loading disabled.", moduleName);
+        wrenchSetErrorString(context, (const char*)error);
+
+        return false;
+    }
 
     WrenchModule* node = (WrenchModule*)wrenchNodeAlloc(context, sizeof(WrenchModule), true);
 
@@ -2699,6 +2784,34 @@ WRENCH_IMPL(void, SetForeignLibraryLoadEnabled, (WrenVM* vm, bool enabled))
     wrench_assert(context != NULL, "");
 
     wrenchSetForeignLibraryLoadEnabled(context, enabled);
+}
+
+WRENCH_IMPL(bool, GetWrenLibraryLoadEnabled, (WrenVM* vm))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchGetWrenLibraryLoadEnabled(context);
+    }
+    else
+    {
+        return false;
+    }
+}
+
+WRENCH_IMPL(void, SetWrenLibraryLoadEnabled, (WrenVM* vm, bool enabled))
+{
+    if (vm == NULL)
+    {
+        return;
+    }
+
+    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+    wrench_assert(context != NULL, "");
+
+    wrenchSetWrenLibraryLoadEnabled(context, enabled);
 }
 
 WRENCH_IMPL(FILE*, GetOutputFile, (WrenVM* vm))
@@ -3495,13 +3608,18 @@ WRENCH_IMPL(WrenLoadModuleResult, DefaultLoadModule, (WrenVM* vm, const char* na
 {
     WrenLoadModuleResult result = {};
 
-    if (wrench_strcmp(name, "meta") == 0 || wrench_strcmp(name, "random") == 0)
+    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+    wrench_assert(context != NULL, "");
+
+    if (!wrenchGetWrenLibraryLoadEnabled(context))
     {
         return result;
     }
 
-    WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
-    wrench_assert(context != NULL, "");
+    if (wrench_strcmp(name, "meta") == 0 || wrench_strcmp(name, "random") == 0)
+    {
+        return result;
+    }
 
     /* Check to see if we've already loaded. This only happens when we've registered modules
      * statically, and those same modules also exist as dynamic libraries (must be ignored).

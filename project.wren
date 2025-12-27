@@ -2,30 +2,12 @@
 --- Copyright (c) 2012-2026 Adam Schackart / "AJ Hackman", all rights reserved.
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 ----------------------------------------------------------------------------- */
-import "file" for Path
+import "file" for File, Path
 import "meta" for Meta
 import "platform" for Platform
 import "process" for Process
-import "util" for StringUtil
+import "util" for NumUtil, StringUtil
 import "vm" for WrenVM
-
-/*******************************************************************************
--* -----------------------------------------------------------------------------
--* - TODO - *-
--* -----------------------------------------------------------------------------
--* find/run vcvarsall so we don't have to use developer command prompt on Win32
--* export projects to cmake, premake, make, visual studio project files, etc.
--*
--* HeaderizeNode (binary, string, text)
--* (Copy/Move)FileNode
--* AssemblerNode
--*
--* address sanitizer
--* thread sanitizer
--* undefined behavior sanitizer
--* integer sanitizer
--* -----------------------------------------------------------------------------
-*******************************************************************************/
 
 /*
 ================================================================================
@@ -34,12 +16,19 @@ import "vm" for WrenVM
 */
 
 class Project {
-    construct new(name) {
-        _name = name != null ? name : "main"
+    /*
+     * TODO: Export to cmake, premake, make, Visual Studio project files, etc.
+     */
+    construct new(project, name) {
+        _project = _project
+        _name = name != null ? name : (_project != null ? _project.name.toString : "main")
 
         /* TODO: Check environment variables.
          */
-        if (Platform.isWindows) {
+        if (_project != null) {
+            _compiler = _project.compiler.toString
+            _linker = _project.linker.toString
+        } else if (Platform.isWindows) {
             _compiler = "cl"
             _linker = "link"
         } else {
@@ -57,21 +46,31 @@ class Project {
             }
         }
 
-        _nodes = []
-        _sources = []
-        _includePaths = []
-        _debug = WrenVM.debug
-        _verbose = true
-        _defines = []
-        _undefs = []
-        _extraCompilerFlags = []
-        _extraLinkerFlags = []
-        _extraObjects = []
-        _libraries = []
-        _async = true
-        _maxAsyncCompileJobs = 16 // TODO: Platform.logicalCoreCount * 2
-        _optimizeForCodeSize = true
+        _nodes = _project != null ? _project.nodes.toList : []
+        _sources = _project != null ? _project.sources.toList : []
+        _includePaths = _project != null ? _project.includePaths.toList : []
+        _debug = _project != null ? _project.debug : WrenVM.debug
+        _verbose = _project != null ? _project.verbose : true
+        _defines = _project != null ? _project.defines.toList : []
+        _undefs = _project != null ? _project.undefs.toList : []
+        _extraCompilerFlags = _project != null ? _project.extraCompilerFlags.toList : []
+        _extraLinkerFlags = _project != null ? _project.extraLinkerFlags.toList : []
+        _extraObjects = _project != null ? _project.extraObjects.toList : []
+        _libraries = _project != null ? _project.libraries.toList : []
+        _async = _project != null ? _project.async : true
+
+        /* TODO: Platform.logicalCoreCount * 2
+         */
+        _maxAsyncCompileJobs = _project != null ? _project.maxAsyncCompileJobs : 16
+        _optimizeForCodeSize = _project != null ? _project.optimizeForCodeSize : true
+
+        if (_project != null) {
+            _project.nodes.add(this)
+        }
     }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
 
     nodes { _nodes }
     nodes=(value) { _nodes = value }
@@ -113,7 +112,7 @@ class Project {
     }
 
     define(name) {
-        define(name, 1)
+        defines.add(name)
     }
 
     undefine(name) {
@@ -132,6 +131,11 @@ class Project {
     // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: linkTimeOptimization
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
+
+    // TODO: addressSanitizer
+    // TODO: threadSanitizer
+    // TODO: undefinedBehaviorSanitizer
+    // TODO: integerSanitizer
 
     optimizeForCodeSize { _optimizeForCodeSize }
     optimizeForCodeSize=(value) { _optimizeForCodeSize = value }
@@ -176,6 +180,9 @@ class Project {
     // ===== [ private utils ] =================================================
 
     ensureVisualStudioCompilerSetup_() {
+        /*
+         * Find/run vcvarsall so we don't have to use Developer Command Prompt on Win32.
+         */
         if (__msvcIsInit == true) {
             return
         }
@@ -262,7 +269,7 @@ class ForeignNode {
      */
     construct new(project, name, mode) {
         if (project == null) {
-            _project = Project.new(name)
+            _project = Project.new(null, name)
         } else {
             _project = project
         }
@@ -342,6 +349,8 @@ class ForeignNode {
                 mode == "o")
     }
 
+    // TODO: assembly mode - instead of outputting object, files, output asm code
+
     toString { "%(type)(%(name))" }
 
     name { _name }
@@ -379,7 +388,7 @@ class ForeignNode {
     }
 
     define(name) {
-        define(name, 1)
+        defines.add(name)
     }
 
     undefine(name) {
@@ -398,6 +407,11 @@ class ForeignNode {
     // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: linkTimeOptimization
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
+
+    // TODO: addressSanitizer
+    // TODO: threadSanitizer
+    // TODO: undefinedBehaviorSanitizer
+    // TODO: integerSanitizer
 
     optimizeForCodeSize { _optimizeForCodeSize }
     optimizeForCodeSize=(value) { _optimizeForCodeSize = value }
@@ -521,8 +535,16 @@ class ForeignNode {
 
     // ===== [ platform-specific implementation details (compiler) ] ===========
 
-    compilerName_ {
-        return compiler + " "
+    compilerName_(filename) {
+        var compilerName = compiler
+
+        /* Call into the Visual Studio macro assembler instead.
+         */
+        if (compilerName == "cl" && filename.endsWith(".S")) {
+            compilerName = "ml"
+        }
+
+        return compilerName + " "
     }
 
     compilerIncludePaths_ {
@@ -576,9 +598,9 @@ class ForeignNode {
                 return "-O0 -g "
             } else {
                 if (optimizeForCodeSize) {
-                    return "-Os "
+                    return "-Os -DNDEBUG "
                 } else {
-                    return "-O3 "
+                    return "-O3 -DNDEBUG "
                 }
             }
         }
@@ -591,7 +613,7 @@ class ForeignNode {
             var d
 
             if (define is List) {
-                d = define[0].toString + "=" + define[1].toString
+                d = define[0] + "=" + define[1].toString
             } else if (define.contains("=")) {
                 d = define
             } else {
@@ -608,7 +630,7 @@ class ForeignNode {
         if (s.isEmpty) {
             return ""
         } else {
-            return " " + s.join(" ")
+            return s.join(" ") + " "
         }
     }
 
@@ -622,7 +644,7 @@ class ForeignNode {
         if (s.isEmpty) {
             return ""
         } else {
-            return " " + s.join(" ")
+            return s.join(" ") + " "
         }
     }
 
@@ -631,7 +653,14 @@ class ForeignNode {
          * Only build object files, don't link.
          */
         if (compiler == "cl") {
-            return "/c /nologo "
+            var s = "/nologo /c "
+
+            // Sync PDB writes.
+            if (async) {
+                s = s + "/FS "
+            }
+
+            return s
         } else {
             return "-fPIC -c "
         }
@@ -656,7 +685,7 @@ class ForeignNode {
     }
 
     compilerCommandLine_(filename) {
-        return (compilerName_ +
+        return (compilerName_(filename) +
                 compilerIncludePaths_ +
                 compilerOptimization_ +
                 compilerDefines_ +
@@ -856,9 +885,9 @@ class ForeignNode {
 */
 
 class WrenNode {
-    construct new(project, name, buildFunc, cleanFunc, finishBuildFunc, finishCleanFunc) {
+    construct new(project, name, buildFunc, cleanFunc) {
         if (project == null) {
-            _project = Project.new(name)
+            _project = Project.new(null, name)
         } else {
             _project = project
         }
@@ -868,8 +897,8 @@ class WrenNode {
         _buildFunc = buildFunc
         _cleanFunc = cleanFunc
 
-        _finishBuildFunc = finishBuildFunc
-        _finishCleanFunc = finishCleanFunc
+        _finishBuildFunc = null
+        _finishCleanFunc = null
 
         _project.nodes.add(this)
     }
@@ -946,21 +975,23 @@ class WrenNode {
 }
 
 class ProcessNode {
-    construct new(project, name, async, buildCommand, cleanCommand, finishBuildCommand, finishCleanCommand) {
+    construct new(project, name, buildCommand, cleanCommand) {
         if (project == null) {
-            _project = Project.new(name)
+            _project = Project.new(null, name)
         } else {
             _project = project
         }
 
         _name = name != null ? name : _project.name.toString
-        _async = async
+        _verbose = _project.verbose
+
+        _async = false
 
         _buildCommand = buildCommand
         _cleanCommand = cleanCommand
 
-        _finishBuildCommand = finishBuildCommand
-        _finishCleanCommand = finishCleanCommand
+        _finishBuildCommand = null
+        _finishCleanCommand = null
 
         _project.nodes.add(this)
     }
@@ -972,6 +1003,9 @@ class ProcessNode {
 
     name { _name }
     name=(value) { _name = value }
+
+    verbose { _verbose }
+    verbose=(value) { _verbose = value }
 
     async { _async }
     async=(value) { _async = value }
@@ -993,6 +1027,10 @@ class ProcessNode {
             return
         }
 
+        if (verbose) {
+            System.print("running " + (async ? "async" : "blocking") + " build command \"%(buildCommand)\"")
+        }
+
         if (async) {
             _buildProcess = Process.create(buildCommand)
         } else {
@@ -1003,6 +1041,10 @@ class ProcessNode {
     clean() {
         if (cleanCommand == null || cleanCommand == "") {
             return
+        }
+
+        if (verbose) {
+            System.print("running " + (async ? "async" : "blocking") + " clean command \"%(cleanCommand)\"")
         }
 
         if (async) {
@@ -1027,6 +1069,10 @@ class ProcessNode {
             }
 
             if (finishBuildCommand != null && finishBuildCommand != "") {
+                if (verbose) {
+                    System.print("running build completion command \"%(finishBuildCommand)\"")
+                }
+
                 Process.run(finishBuildCommand)
             }
         } else if (command == "clean") {
@@ -1043,6 +1089,10 @@ class ProcessNode {
             }
 
             if (finishCleanCommand != null && finishCleanCommand != "") {
+                if (verbose) {
+                    System.print("running clean completion command \"%(finishCleanCommand)\"")
+                }
+
                 Process.run(finishCleanCommand)
             }
         } else {
@@ -1050,6 +1100,395 @@ class ProcessNode {
         }
     }
 }
+
+class CopyNode {
+    construct new(project, name, src, dst) {
+        if (project == null) {
+            _project = Project.new(null, name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+        _verbose = _project.verbose
+
+        _src = src
+        _dst = dst
+
+        _deleteSrcOnClean = false
+        _deleteDstOnClean = true
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    verbose { _verbose }
+    verbose=(value) { _verbose = value }
+
+    src { _src }
+    src=(value) { _src = value }
+
+    dst { _dst }
+    dst=(value) { _dst = value }
+
+    deleteSrcOnClean { _deleteSrcOnClean }
+    deleteSrcOnClean=(value) { _deleteSrcOnClean = value }
+
+    deleteDstOnClean { _deleteDstOnClean }
+    deleteDstOnClean=(value) { _deleteDstOnClean = value }
+
+    build() {
+        if (verbose) {
+            System.print("copying \"%(src)\" to \"%(dst)\"")
+        }
+
+        Path.copy(src, dst)
+    }
+
+    clean() {
+        if (deleteSrcOnClean) {
+            if (verbose) {
+                System.print("removing \"%(src)\"")
+            }
+
+            Path.tryRemove(src)
+        }
+
+        if (deleteDstOnClean) {
+            if (verbose) {
+                System.print("removing \"%(dst)\"")
+            }
+
+            Path.tryRemove(dst)
+        }
+    }
+
+    finish(command) {
+        //
+    }
+}
+
+// TODO: RemoveNode (for clean)
+
+class HeaderNode {
+    construct new(project, name, mode, src, dst) {
+        if (project == null) {
+            _project = Project.new(null, name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+        _mode = mode
+
+        _verbose = _project.verbose
+
+        _src = src
+        _dst = dst
+
+        _deleteSrcOnClean = false
+        _deleteDstOnClean = true
+
+        _stripLeadingWhitespace = true
+        _appendNewlines = true
+        _terminator = !isModule
+        _extraIndentation = isModule ? 4 : 0
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    verbose { _verbose }
+    verbose=(value) { _verbose = value }
+
+    mode { _mode }
+    mode=(value) { _mode = value }
+
+    isBinary {
+        var mode = StringUtil.toLower(_mode)
+        return mode == "binary"
+    }
+
+    isString {
+        var mode = StringUtil.toLower(_mode)
+        return mode == "string"
+    }
+
+    isText {
+        var mode = StringUtil.toLower(_mode)
+        return mode == "text"
+    }
+
+    isModule {
+        var mode = StringUtil.toLower(_mode)
+        return mode == "module"
+    }
+
+    src { _src }
+    src=(value) { _src = value }
+
+    dst { _dst }
+    dst=(value) { _dst = value }
+
+    deleteSrcOnClean { _deleteSrcOnClean }
+    deleteSrcOnClean=(value) { _deleteSrcOnClean = value }
+
+    deleteDstOnClean { _deleteDstOnClean }
+    deleteDstOnClean=(value) { _deleteDstOnClean = value }
+
+    stripLeadingWhitespace { _stripLeadingWhitespace }
+    stripLeadingWhitespace=(value) { _stripLeadingWhitespace = value }
+
+    appendNewlines { _appendNewlines }
+    appendNewlines=(value) { _appendNewlines = value }
+
+    terminator { _terminator }
+    terminator=(value) { _terminator = value }
+
+    extraIndentation { _extraIndentation }
+    extraIndentation=(value) { _extraIndentation = value }
+
+    build() {
+        if (verbose) {
+            System.print("converting \"%(src)\" to %(mode) header \"%(dst)\"")
+        }
+
+        var src_file = File.open(src, "rb")
+        var dst_file = File.open(dst, "w")
+
+        dst_file.write("// This file was automatically generated from \"%(src)\". Do not edit!\n\n")
+
+        if (isBinary) {
+            headerizeBinary_(src_file, dst_file)
+        } else if (isString) {
+            headerizeString_(src_file, dst_file)
+        } else if (isText) {
+            headerizeText_(src_file, dst_file)
+        } else if (isModule) {
+            headerizeModule_(src_file, dst_file)
+        } else {
+            Fiber.abort(mode)
+        }
+
+        src_file.close()
+        dst_file.close()
+    }
+
+    clean() {
+        if (deleteSrcOnClean) {
+            if (verbose) {
+                System.print("removing %(mode) header input \"%(src)\"")
+            }
+
+            Path.tryRemove(src)
+        }
+
+        if (deleteDstOnClean) {
+            if (verbose) {
+                System.print("removing %(mode) header output \"%(dst)\"")
+            }
+
+            Path.tryRemove(dst)
+        }
+    }
+
+    finish(command) {
+        //
+    }
+
+    headerizeBinary_(src_file, dst_file) {
+        var v = 0
+
+        while (true) {
+            var c = src_file.getc()
+
+            if (c == File.EOF) {
+                break
+            }
+
+            if (extraIndentation != 0) {
+                dst_file.write(" " * extraIndentation)
+            }
+
+            dst_file.write("0x%(NumUtil.hex8(c)), ")
+            v = v + 1
+
+            /* Keep lines under 80 horizontal chars.
+             */
+            if (v != 0 && v % 13 == 0) {
+                dst_file.putc("\n")
+            }
+        }
+
+        dst_file.putc("\n")
+    }
+
+    headerize_(src_file, dst_file, multi_line) {
+        if (stripLeadingWhitespace) {
+            while (true) {
+                var line = src_file.readLine()
+
+                if (line == "") {
+                    break
+                }
+
+                var indentation = (line.count - line.trimStart().count) + extraIndentation
+                line = escapeString_(line.trim())
+
+                if (line == "") {
+                    dst_file.write("\n")
+                    continue
+                }
+
+                if (indentation != 0) {
+                    dst_file.write(" " * indentation)
+                }
+
+                dst_file.write("\"")
+                dst_file.write(line)
+
+                if (appendNewlines) {
+                    dst_file.write("\\n")
+                }
+
+                if (multi_line) {
+                    dst_file.write("\",\n")
+                } else {
+                    dst_file.write("\"\n")
+                }
+            }
+        } else {
+            while (true) {
+                var line = src_file.readLine()
+
+                if (line == "") {
+                    break
+                }
+
+                line = escapeString_(line.trimEnd())
+
+                dst_file.write("\"")
+                dst_file.write(line)
+
+                if (appendNewlines) {
+                    dst_file.write("\\n")
+                }
+
+                if (multi_line) {
+                    dst_file.write("\",\n")
+                } else {
+                    dst_file.write("\"\n")
+                }
+            }
+        }
+
+        if (terminator) {
+            if (multi_line) {
+                dst_file.write("NULL,\n")
+            } else {
+                dst_file.write(";\n")
+            }
+        }
+    }
+
+    headerizeText_(src_file, dst_file) {
+        headerize_(src_file, dst_file, true)
+    }
+
+    headerizeString_(src_file, dst_file) {
+        headerize_(src_file, dst_file, false)
+    }
+
+    headerizeModule_(src_file, dst_file) {
+        /*
+         * TODO: Assign multiple lines to a constant array, and iterate through (calling wrenCode on each line).
+         * This is necessary as source files grow (as MSVC has a 65535-character size limit on string literals).
+         */
+        dst_file.write("#ifndef WRENCH_IMPLEMENTATION\n")
+        dst_file.write("#define WRENCH_IMPLEMENTATION 1\n")
+        dst_file.write("#endif\n")
+        dst_file.write("#include <wrench.h>\n")
+        dst_file.write("\n")
+        dst_file.write("/*\n")
+        dst_file.write("================================================================================\n")
+        dst_file.write(" * ~~ [ (un)hook ] ~~ *\n")
+        dst_file.write("--------------------------------------------------------------------------------\n")
+        dst_file.write("*/\n")
+        dst_file.write("\n")
+        dst_file.write("#if WRENCH_%(StringUtil.toUpper(name))_EXTENDED\n")
+        dst_file.write("    /*\n")
+        dst_file.write("     * Enable user extension of stdlib modules.\n")
+        dst_file.write("     */\n")
+        dst_file.write("    #ifndef __%(StringUtil.toUpper(name))_EX_INL__\n")
+        dst_file.write("    #include <%(StringUtil.toLower(name))_ex.inl>\n")
+        dst_file.write("    #endif\n")
+        dst_file.write("#else\n")
+        dst_file.write("    static bool %(StringUtil.toLower(name))WrenInitEx(WrenVM* vm)\n")
+        dst_file.write("    {\n")
+        dst_file.write("        return true;\n")
+        dst_file.write("    }\n")
+        dst_file.write("\n")
+        dst_file.write("    static void %(StringUtil.toLower(name))WrenQuitEx(void)\n")
+        dst_file.write("    {\n")
+        dst_file.write("        //\n")
+        dst_file.write("    }\n")
+        dst_file.write("#endif /* WRENCH_%(StringUtil.toUpper(name))_EXTENDED */\n")
+        dst_file.write("\n")
+        dst_file.write("WRENCH_EXPORT bool %(StringUtil.toLower(name))WrenInit(WrenVM* vm)\n")
+        dst_file.write("{\n")
+        dst_file.write("    if (!wrenBeginModule(vm, \"%(StringUtil.toLower(name))\"))\n")
+        dst_file.write("    {\n")
+        dst_file.write("        return false;\n")
+        dst_file.write("    }\n")
+        dst_file.write("\n")
+        dst_file.write("    if (!wrenCode(vm,\n")
+        dst_file.write("\n")
+
+        headerizeString_(src_file, dst_file)
+
+        dst_file.write("\n")
+        dst_file.write("    )) { return false; }\n")
+        dst_file.write("\n")
+        dst_file.write("    if (!%(StringUtil.toLower(name))WrenInitEx(vm))\n")
+        dst_file.write("    {\n")
+        dst_file.write("        return false;\n")
+        dst_file.write("    }\n")
+        dst_file.write("\n")
+        dst_file.write("    return wrenEndModule(vm);\n")
+        dst_file.write("}\n")
+        dst_file.write("\n")
+        dst_file.write("WRENCH_EXPORT void %(StringUtil.toLower(name))WrenQuit(void)\n")
+        dst_file.write("{\n")
+        dst_file.write("    %(StringUtil.toLower(name))WrenQuitEx();\n")
+        dst_file.write("}\n")
+    }
+
+    escapeString_(s) {
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+    }
+}
+
+// TODO: ZipArchiveNode
+
+// TODO: DownloadNode
 
 /*
 ================================================================================
@@ -1073,7 +1512,22 @@ var main = Fn.new {
         mode = StringUtil.toLower(WrenVM.self.commandLine[3])
     }
 
-    var project = Project.new("wrench")
+    var project = Project.new(null, "wrench")
+
+    if (false) {
+        var headers = Project.new(null, "headers")
+
+        HeaderNode.new(headers, "config", "module", "config.wren", "wrench_config.c")
+        HeaderNode.new(headers, "project", "module", "project.wren", "wrench_project.c")
+
+        if (command == "build") {
+            headers.build()
+        } else if (command == "clean") {
+            headers.clean()
+        } else {
+            Fiber.abort("Invalid command \"%(command)\".")
+        }
+    }
 
     if (mode == "debug") {
         project.debug = true
@@ -1158,6 +1612,16 @@ var main = Fn.new {
 
         node = ForeignNode.new(project, "zip", "shared_library")
         node.sources.add("wrench_zip.c")
+
+        if (Path.isFile("wrench_config.c")) {
+            node = ForeignNode.new(project, "config", "shared_library")
+            node.sources.add("wrench_config.c")
+        }
+
+        if (Path.isFile("wrench_project.c")) {
+            node = ForeignNode.new(project, "project", "shared_library")
+            node.sources.add("wrench_project.c")
+        }
 
         if (false) {
             node = ForeignNode.new(project, "tcc", "shared_library")
