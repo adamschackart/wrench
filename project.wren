@@ -156,6 +156,13 @@ class Project {
     maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
 
     build() {
+        /*
+         * FIXME: This uses the C clock() function, which can be low-resolution and imprecise.
+         * Need to create a time module that calls QueryPerformanceCounter (or clock_gettime).
+         * EDIT: We could also just patch System directly (see wren_core.c for inspiration)...
+         */
+        //var start_time = System.clock
+
         for (node in nodes) {
             node.build()
         }
@@ -165,9 +172,20 @@ class Project {
         for (node in nodes) {
             node.finish("build")
         }
+
+        /*if (verbose) {
+            System.print("%(this).build done in %(System.clock - start_time) seconds.")
+        }*/
     }
 
     clean() {
+        /*
+         * FIXME: This uses the C clock() function, which can be low-resolution and imprecise.
+         * Need to create a time module that calls QueryPerformanceCounter (or clock_gettime).
+         * EDIT: We could also just patch System directly (see wren_core.c for inspiration)...
+         */
+        //var start_time = System.clock
+
         for (node in nodes) {
             node.clean()
         }
@@ -175,6 +193,10 @@ class Project {
         for (node in nodes) {
             node.finish("clean")
         }
+
+        /*if (verbose) {
+            System.print("%(this).clean done in %(System.clock - start_time) seconds.")
+        }*/
     }
 
     // ===== [ private utils ] =================================================
@@ -577,6 +599,8 @@ class ForeignNode {
                      */
                     if (false) {
                         return "/O1 /DNDEBUG "
+                    } else if (false) {
+                        return "/Oi /DNDEBUG "
                     } else {
                         return "/Os /DNDEBUG "
                     }
@@ -885,6 +909,9 @@ class ForeignNode {
 */
 
 class WrenNode {
+    /*
+     * TODO: async - spawn thread with its own VM, transfer results to main VM?
+     */
     construct new(project, name, buildFunc, cleanFunc) {
         if (project == null) {
             _project = Project.new(null, name)
@@ -1486,6 +1513,88 @@ class HeaderNode {
     }
 }
 
+class AmalgamationNode {
+    construct new(project, name) {
+        if (project == null) {
+            _project = Project.new(null, name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+        _verbose = _project.verbose
+
+        _sources = []
+        _includesOnly = false
+        _addFilenames = true
+        _deleteOnClean = true
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    verbose { _verbose }
+    verbose=(value) { _verbose = value }
+
+    sources { _sources }
+    sources=(value) { _sources = value }
+
+    includesOnly { _includesOnly }
+    includesOnly=(value) { _includesOnly = value }
+
+    addFilenames { _addFilenames }
+    addFilenames=(value) { _addFilenames = value }
+
+    deleteOnClean { _deleteOnClean }
+    deleteOnClean=(value) { _deleteOnClean = value }
+
+    build() {
+        var dst_file = File.open(name, "w")
+
+        if (verbose) {
+            System.print("amalgamating %(sources.count) source files into \"%(name)\"" +
+                                            (includesOnly ? " (#includes only)" : ""))
+        }
+
+        if (includesOnly) {
+            for (filename in sources) {
+                dst_file.write("#include <%(filename)>\n")
+            }
+        } else {
+            for (filename in sources) {
+                if (addFilenames) {
+                    dst_file.write("// %(filename)\n\n")
+                }
+
+                dst_file.write(File.read(filename))
+            }
+        }
+
+        dst_file.close()
+    }
+
+    clean() {
+        if (deleteOnClean) {
+            if (verbose) {
+                System.print("removing amalgamated source file \"%(name)\"")
+            }
+
+            Path.tryRemove(name)
+        }
+    }
+
+    finish(command) {
+        //
+    }
+}
+
 // TODO: ZipArchiveNode
 
 // TODO: DownloadNode
@@ -1532,6 +1641,30 @@ var main = Fn.new {
         }
     }
 
+    if (!Path.isFile("wren.c"))
+        var amalgamator = AmalgamationNode.new(null, "wren.c")
+
+        for (filename in Path.list("wren/src/optional")) {
+            if (filename.endsWith(".c")) {
+                amalgamator.sources.add(filename)
+            }
+        }
+
+        for (filename in Path.list("wren/src/vm")) {
+            if (filename.endsWith(".c")) {
+                amalgamator.sources.add(filename)
+            }
+        }
+
+        if (command == "build") {
+            amalgamator.build()
+        } else if (command == "clean") {
+            amalgamator.clean()
+        } else {
+            Fiber.abort("Invalid command \"%(command)\".")
+        }
+    }
+
     if (mode == "debug") {
         project.debug = true
     } else if (mode == "release") {
@@ -1548,6 +1681,9 @@ var main = Fn.new {
 
     project.includePaths.add(".")
     project.includePaths.add("wren/src/include")
+
+    project.includePaths.add("wren/src/optional")
+    project.includePaths.add("wren/src/vm")
 
     if (project.compiler != "cl") {
         project.extraCompilerFlags.add("-Wno-format-truncation")
