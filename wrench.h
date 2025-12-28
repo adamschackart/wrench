@@ -477,6 +477,7 @@ WRENCH_DECL(void*, StackCalloc, (WrenVM* vm, size_t num, size_t size));
 WRENCH_DECL(void*, StackRealloc, (WrenVM* vm, void* ptr, size_t size));
 WRENCH_DECL(char*, StackStringCopy, (WrenVM* vm, const char* str, size_t* length));
 WRENCH_DECL(void, StackFree, (WrenVM* vm, void* ptr, size_t size));
+WRENCH_DECL(bool, IsStackMemory, (WrenVM* vm, void* ptr));
 
 /* Load code from disk. Name is prefixed by base path & suffixed with ".wren".
  */
@@ -1928,6 +1929,11 @@ static void wrenchStackFree(WrenchContext* context, void* ptr, size_t size)
     context->stack_alloc_mark = (char*)ptr;
 }
 
+static bool wrenchIsStackMemory(WrenchContext* context, void* ptr)
+{
+    return (char*)ptr >= context->stack_alloc_base && (char*)ptr < context->stack_alloc_end;
+}
+
 static bool wrenchRegisterModuleImpl(WrenchContext* context, WrenchModule* node, const char* source, size_t num_chars, bool copy_source)
 {
     char error[1024 * 4];
@@ -2559,6 +2565,9 @@ static void wrenchFreeContext(WrenchContext* context)
 
     wrenchMemoryPoolFree(&context->memory_pool);
     wrenchFreeCommandLine(context);
+
+    wrench_assert(context->stack_alloc_mark == context->stack_alloc_base, "");
+    wrench_free(context->stack_alloc_base);
 
     wrench_free(context->source_code_alloc_base);
     wrench_free(context->node_alloc_base);
@@ -3415,6 +3424,21 @@ WRENCH_IMPL(void, StackFree, (WrenVM* vm, void* ptr, size_t size))
         wrench_assert(context != NULL, "");
 
         wrenchStackFree(context, ptr, size);
+    }
+}
+
+WRENCH_IMPL(bool, IsStackMemory, (WrenVM* vm, void* ptr))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+
+        return wrenchIsStackMemory(context, ptr);
+    }
+    else
+    {
+        return false;
     }
 }
 

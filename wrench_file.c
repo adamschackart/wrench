@@ -321,33 +321,50 @@ static void file_Path_list(WrenVM* vm)
 --------------------------------------------------------------------------------
 */
 
-size_t file_File_bytesConsumed_impl(FILE* file)
+static size_t file_File_bytesConsumed_impl(FILE* file)
 {
     return (size_t)wrench_ftell(file);
 }
 
-size_t file_File_bytesRemaining_impl(FILE* file)
+static bool file_File_position_impl(FILE* file, long* origin, long* ending)
 {
-    const long origin = wrench_ftell(file);
+    wrench_assert(origin != NULL, "");
+    wrench_assert(ending != NULL, "");
 
-    if (origin == -1)
+    *origin = wrench_ftell(file);
+
+    if (*origin == -1)
     {
-        wrench_assert(0, "TODO actual error handling here");
+        return false;
     }
 
     if (wrench_fseek(file, 0, SEEK_END) != 0)
     {
-        wrench_assert(0, "TODO actual error handling here");
+        return false;
     }
 
-    const long ending = wrench_ftell(file);
+    *ending = wrench_ftell(file);
 
-    if (ending == -1)
+    if (*ending == -1)
     {
-        wrench_assert(0, "TODO actual error handling here");
+        // TODO: Try to seek back?
+        return false;
     }
 
-    if (wrench_fseek(file, origin, SEEK_SET) != 0)
+    if (wrench_fseek(file, *origin, SEEK_SET) != 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+static size_t file_File_bytesRemaining_impl(FILE* file)
+{
+    long origin;
+    long ending;
+
+    if (!file_File_position_impl(file, &origin, &ending))
     {
         wrench_assert(0, "TODO actual error handling here");
     }
@@ -355,9 +372,17 @@ size_t file_File_bytesRemaining_impl(FILE* file)
     return (size_t)(ending - origin);
 }
 
-size_t file_File_bytesTotal_impl(FILE* file)
+static size_t file_File_bytesTotal_impl(FILE* file)
 {
-    return file_File_bytesConsumed_impl(file) + file_File_bytesRemaining_impl(file);
+    long origin;
+    long ending;
+
+    if (!file_File_position_impl(file, &origin, &ending))
+    {
+        wrench_assert(0, "TODO actual error handling here");
+    }
+
+    return (size_t)ending;
 }
 
 /* ===== [ wren ] =========================================================== */
@@ -626,8 +651,12 @@ static void file_File_read(WrenVM* vm)
         bytes_to_read = bytes_requested;
     }
 
-    // TODO: Try using a stack allocator here.
-    void* data = wrench_malloc(bytes_to_read);
+    void* data = wrenStackMalloc(vm, bytes_to_read);
+
+    if (data == NULL)
+    {
+        data = wrench_malloc(bytes_to_read);
+    }
 
     if (data == NULL)
     {
@@ -646,7 +675,15 @@ static void file_File_read(WrenVM* vm)
     }
 
     wrenSetSlotBytes(vm, 0, (const char*)data, bytes_to_read);
-    wrench_free(data);
+
+    if (wrenIsStackMemory(vm, data))
+    {
+        wrenStackFree(vm, data, bytes_to_read);
+    }
+    else
+    {
+        wrench_free(data);
+    }
 }
 
 /* TODO: Better error handling.
