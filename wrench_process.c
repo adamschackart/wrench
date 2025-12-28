@@ -282,6 +282,9 @@ static void process_Process_stdin(WrenVM* vm)
 
     file->collect = false;
     file->file = subprocess_stdin(&self->process);
+
+    // TODO: path
+    // TODO: mode
 }
 
 static void process_Process_stdout(WrenVM* vm)
@@ -297,6 +300,9 @@ static void process_Process_stdout(WrenVM* vm)
 
     file->collect = false;
     file->file = subprocess_stdout(&self->process);
+
+    // TODO: path
+    // TODO: mode
 }
 
 static void process_Process_stderr(WrenVM* vm)
@@ -320,6 +326,9 @@ static void process_Process_stderr(WrenVM* vm)
 
     file->collect = false;
     file->file = handle;
+
+    // TODO: path
+    // TODO: mode
 }
 
 static void process_Process_join(WrenVM* vm)

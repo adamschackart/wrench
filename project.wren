@@ -1641,7 +1641,7 @@ var main = Fn.new {
         }
     }
 
-    if (!Path.isFile("wren.c"))
+    if (!Path.isFile("wren.c")) {
         var amalgamator = AmalgamationNode.new(null, "wren.c")
 
         for (filename in Path.list("wren/src/optional")) {

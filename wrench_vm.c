@@ -125,6 +125,9 @@ static void vm_WrenVM_outputFile_get(WrenVM* vm)
     WRENCH_SET_MAGIC_TAG(file, file, File);
 
     file->file = wrenGetOutputFile(self->vm);
+
+    // TODO: path
+    // TODO: mode
 }
 
 static void vm_WrenVM_outputFile_set(WrenVM* vm)

@@ -13,6 +13,9 @@ typedef struct file_File
 
     bool collect;
     FILE* file;
+
+    char* path;
+    char* mode;
 }
 file_File;
 

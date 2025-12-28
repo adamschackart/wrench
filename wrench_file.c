@@ -16,55 +16,20 @@
 --------------------------------------------------------------------------------
 */
 
-static void file_Path_exists(WrenVM* vm)
+static bool file_Path_isDirectory_impl(const char* path)
 {
-    const char* filename = wrenGetSlotString(vm, 1);
-
-    #if _WIN32
-    {
-        DWORD dwAttrib = GetFileAttributesA(filename);
-
-        #if 0
-        {
-            if (dwAttrib != INVALID_FILE_ATTRIBUTES &&
-                dwAttrib & FILE_ATTRIBUTE_DIRECTORY)
-            {
-                wrenSetSlotBool(vm, 0, true);
-            }
-            else
-            {
-                wrenSetSlotBool(vm, 0, PathFileExistsA(filename));
-            }
-        }
-        #else
-        {
-            wrenSetSlotBool(vm, 0, dwAttrib != INVALID_FILE_ATTRIBUTES);
-        }
-        #endif
-    }
-    #else
-    {
-        wrenSetSlotBool(vm, 0, access(filename, F_OK) == 0);
-    }
-    #endif
-}
-
-static void file_Path_isDirectory(WrenVM* vm)
-{
-    const char* path = wrenGetSlotString(vm, 1);
-
     #if _WIN32
     {
         #if 1
         {
             const DWORD dwAttrib = GetFileAttributesA(path);
 
-            wrenSetSlotBool(vm, 0, (dwAttrib != INVALID_FILE_ATTRIBUTES &&
-                                    dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+            return (dwAttrib != INVALID_FILE_ATTRIBUTES && (
+                (dwAttrib & FILE_ATTRIBUTE_DIRECTORY) != 0));
         }
         #else
         {
-            wrenSetSlotBool(vm, 0, PathIsDirectoryA(path));
+            return PathIsDirectoryA(path);
         }
         #endif
     }
@@ -72,69 +37,109 @@ static void file_Path_isDirectory(WrenVM* vm)
     {
         struct stat statbuf;
 
-        if (stat(path, &statbuf) != 0)
+        if (wrench_stat(path, &statbuf) != 0)
         {
-            wrenSetSlotBool(vm, 0, false);
+            return false;
         }
         else
         {
-            wrenSetSlotBool(vm, 0, S_ISDIR(statbuf.st_mode));
+            return S_ISDIR(statbuf.st_mode);
         }
     }
-    #endif
+    #endif /* _WIN32 */
 }
 
-static void file_Path_isFile(WrenVM* vm)
+static bool file_Path_isFile_impl(const char* path)
 {
-    const char* path = wrenGetSlotString(vm, 1);
-
     #if _WIN32
     {
         const DWORD dwAttrib = GetFileAttributesA(path);
 
-        wrenSetSlotBool(vm, 0, (dwAttrib != INVALID_FILE_ATTRIBUTES && \
-                            ((dwAttrib & FILE_ATTRIBUTE_NORMAL) != 0 ||
-                            (dwAttrib & FILE_ATTRIBUTE_ARCHIVE) != 0)));
+        return (dwAttrib != INVALID_FILE_ATTRIBUTES && (
+            (dwAttrib & FILE_ATTRIBUTE_NORMAL) != 0 ||
+            (dwAttrib & FILE_ATTRIBUTE_ARCHIVE) != 0));
     }
     #else
     {
         struct stat statbuf;
 
-        if (stat(path, &statbuf) != 0)
+        if (wrench_stat(path, &statbuf) != 0)
         {
-            wrenSetSlotBool(vm, 0, false);
+            return false;
         }
         else
         {
-            wrenSetSlotBool(vm, 0, S_ISREG(statbuf.st_mode));
+            return S_ISREG(statbuf.st_mode);
         }
     }
+    #endif /* _WIN32 */
+}
+
+static bool file_Path_exists_impl(const char* path)
+{
+    return file_Path_isDirectory_impl(path) || file_Path_isFile_impl(path);
+}
+
+static bool file_Path_createDirectory_impl(const char* path) // mkdir
+{
+    #if _WIN32
+    {
+        return _mkdir(path) == 0;
+    }
+    #else
+    {
+        return mkdir(path, 0777) == 0;
+    }
     #endif
+}
+
+static bool file_Path_createFile_impl(const char* path) // touch
+{
+    // If already existing, don't change.
+    FILE* file = wrench_fopen(path, "a");
+
+    if (file != NULL)
+    {
+        return wrench_fclose(file) == 0;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+static bool file_Path_move_impl(const char* old_name, const char* new_name) // mv
+{
+    return wrench_rename(old_name, new_name) == 0;
+}
+
+static bool file_Path_remove_impl(const char* path) // rm
+{
+    return wrench_remove(path) == 0;
+}
+
+/* ===== [ wren ] =========================================================== */
+
+static void file_Path_exists(WrenVM* vm)
+{
+    wrenSetSlotBool(vm, 0, file_Path_exists_impl(wrenGetSlotString(vm, 1)));
+}
+
+static void file_Path_isDirectory(WrenVM* vm)
+{
+    wrenSetSlotBool(vm, 0, file_Path_isDirectory_impl(wrenGetSlotString(vm, 1)));
+}
+
+static void file_Path_isFile(WrenVM* vm)
+{
+    wrenSetSlotBool(vm, 0, file_Path_isFile_impl(wrenGetSlotString(vm, 1)));
 }
 
 static void file_Path_createDirectory(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
 
-    #if _WIN32
-    {
-        if (_mkdir(path) != 0)
-        {
-            goto failed;
-        }
-    }
-    #else
-    {
-        if (mkdir(path, 0777) != 0)
-        {
-            goto failed;
-        }
-    }
-    #endif
-
-    return;
-
-    failed:
+    if (!file_Path_createDirectory_impl(path))
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "Failed to create directory \"%s\"", path);
@@ -147,24 +152,10 @@ static void file_Path_createDirectory(WrenVM* vm)
 static void file_Path_createFile(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
-    char error[1024 * 4];
 
-    /* If the file already exists, don't touch its contents.
-     */
-    FILE* file = wrench_fopen(path, "a");
-
-    if (file != NULL)
+    if (!file_Path_createFile_impl(path))
     {
-        if (fclose(file) != 0)
-        {
-            wrench_snprintf(error, sizeof(error), "Failed to close file \"%s\"", path);
-
-            wrenSetSlotString(vm, 0, (const char*)error);
-            wrenAbortFiber(vm, 0);
-        }
-    }
-    else
-    {
+        char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "Failed to create file \"%s\"", path);
 
         wrenSetSlotString(vm, 0, (const char*)error);
@@ -177,7 +168,7 @@ static void file_Path_move(WrenVM* vm)
     const char* old_name = wrenGetSlotString(vm, 1);
     const char* new_name = wrenGetSlotString(vm, 2);
 
-    if (wrench_rename(old_name, new_name) != 0)
+    if (!file_Path_move_impl(old_name, new_name))
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "Failed to move \"%s\" to \"%s\".", old_name, new_name);
@@ -191,7 +182,7 @@ static void file_Path_remove(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
 
-    if (wrench_remove(path) != 0)
+    if (!file_Path_remove_impl(path))
     {
         char error[1024 * 4];
         wrench_snprintf(error, sizeof(error), "Failed to remove file \"%s\".", path);
@@ -330,6 +321,47 @@ static void file_Path_list(WrenVM* vm)
 --------------------------------------------------------------------------------
 */
 
+size_t file_File_bytesConsumed_impl(FILE* file)
+{
+    return (size_t)wrench_ftell(file);
+}
+
+size_t file_File_bytesRemaining_impl(FILE* file)
+{
+    const long origin = wrench_ftell(file);
+
+    if (origin == -1)
+    {
+        wrench_assert(0, "TODO actual error handling here");
+    }
+
+    if (wrench_fseek(file, 0, SEEK_END) != 0)
+    {
+        wrench_assert(0, "TODO actual error handling here");
+    }
+
+    const long ending = wrench_ftell(file);
+
+    if (ending == -1)
+    {
+        wrench_assert(0, "TODO actual error handling here");
+    }
+
+    if (wrench_fseek(file, origin, SEEK_SET) != 0)
+    {
+        wrench_assert(0, "TODO actual error handling here");
+    }
+
+    return (size_t)(ending - origin);
+}
+
+size_t file_File_bytesTotal_impl(FILE* file)
+{
+    return file_File_bytesConsumed_impl(file) + file_File_bytesRemaining_impl(file);
+}
+
+/* ===== [ wren ] =========================================================== */
+
 static void file_File_ctor(WrenVM* vm)
 {
     WRENCH_STUB();
@@ -342,8 +374,16 @@ static void file_File_dtor(void* data)
 
     if (self->collect && self->file != NULL)
     {
-        fclose(self->file);
+        if (wrench_fclose(self->file) != 0)
+        {
+            wrench_assert(0, "File(\"%s\", \"%s\") dtor failed",
+                        self->path != NULL ? self->path : "",
+                        self->mode != NULL ? self->mode : "");
+        }
     }
+
+    wrench_free(self->path);
+    wrench_free(self->mode);
 }
 
 static void file_File_open(WrenVM* vm)
@@ -351,7 +391,7 @@ static void file_File_open(WrenVM* vm)
     const char* path = wrenGetSlotString(vm, 1);
     const char* mode = wrenGetSlotString(vm, 2);
 
-    FILE* file = fopen(path, mode);
+    FILE* file = wrench_fopen(path, mode);
 
     if (file != NULL)
     {
@@ -360,6 +400,9 @@ static void file_File_open(WrenVM* vm)
 
         data->collect = true;
         data->file = file;
+
+        data->path = wrench_strdup(path);
+        data->mode = wrench_strdup(mode);
     }
     else
     {
@@ -376,15 +419,74 @@ static void file_File_close(WrenVM* vm)
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
-    if (fclose(self->file) != 0)
+    if (wrench_fclose(self->file) != 0)
     {
-        /* TODO: Keep/copy the name and mode of the file.
-         */
-        wrenSetSlotString(vm, 0, "failed to close file");
+        char error[1024 * 4];
+
+        wrench_snprintf(error, sizeof(error), "failed to close file \"%s\" with mode \"%s\"",
+                                                        self->path != NULL ? self->path : "",
+                                                        self->mode != NULL ? self->mode : "");
+
+        wrenSetSlotString(vm, 0, (const char*)error);
         wrenAbortFiber(vm, 0);
     }
 
+    // NOTE: Path and mode can stay around until the dtor.
     self->file = NULL;
+}
+
+static void file_File_path_get(WrenVM* vm)
+{
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    if (self->path != NULL)
+    {
+        wrenSetSlotString(vm, 0, (const char*)self->path);
+    }
+    else if (self->file == wrench_stderr)
+    {
+        wrenSetSlotString(vm, 0, "stderr");
+    }
+    else if (self->file == wrench_stdin)
+    {
+        wrenSetSlotString(vm, 0, "stdin");
+    }
+    else if (self->file == wrench_stdout)
+    {
+        wrenSetSlotString(vm, 0, "stdout");
+    }
+    else
+    {
+        wrenSetSlotString(vm, 0, "");
+    }
+}
+
+static void file_File_mode_get(WrenVM* vm)
+{
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    if (self->mode != NULL)
+    {
+        wrenSetSlotString(vm, 0, (const char*)self->mode);
+    }
+    else if (self->file == wrench_stderr)
+    {
+        wrenSetSlotString(vm, 0, "a");
+    }
+    else if (self->file == wrench_stdin)
+    {
+        wrenSetSlotString(vm, 0, "r");
+    }
+    else if (self->file == wrench_stdout)
+    {
+        wrenSetSlotString(vm, 0, "a");
+    }
+    else
+    {
+        wrenSetSlotString(vm, 0, "");
+    }
 }
 
 static bool file_File_ensureCRLF = false;
@@ -399,28 +501,37 @@ static void file_File_ensureCRLF_set(WrenVM* vm)
     file_File_ensureCRLF = wrenGetSlotBool(vm, 1);
 }
 
-static void file_File_stdout(WrenVM* vm)
+static void file_File_stdout_get(WrenVM* vm)
 {
     file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
     WRENCH_SET_MAGIC_TAG(data, file, File);
 
-    data->file = stdout;
+    data->file = wrench_stdout;
+
+    // TODO: path
+    // TODO: mode
 }
 
-static void file_File_stderr(WrenVM* vm)
+static void file_File_stderr_get(WrenVM* vm)
 {
     file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
     WRENCH_SET_MAGIC_TAG(data, file, File);
 
-    data->file = stderr;
+    data->file = wrench_stderr;
+
+    // TODO: path
+    // TODO: mode
 }
 
-static void file_File_stdin(WrenVM* vm)
+static void file_File_stdin_get(WrenVM* vm)
 {
     file_File* data = (file_File*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(file_File));
     WRENCH_SET_MAGIC_TAG(data, file, File);
 
-    data->file = stdin;
+    data->file = wrench_stdin;
+
+    // TODO: path
+    // TODO: mode
 }
 
 /* TODO: Better error handling.
@@ -430,7 +541,7 @@ static void file_File_getc(WrenVM* vm)
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
-    wrenSetSlotInt(vm, 0, getc(self->file));
+    wrenSetSlotInt(vm, 0, wrench_getc(self->file));
 }
 
 /* TODO: Better error handling.
@@ -444,7 +555,7 @@ static void file_File_putc(WrenVM* vm)
     {
         case WREN_TYPE_NUM:
         {
-            wrenSetSlotInt(vm, 0, putc(wrenGetSlotInt(vm, 1), self->file));
+            wrenSetSlotInt(vm, 0, wrench_putc(wrenGetSlotInt(vm, 1), self->file));
         }
         break;
 
@@ -459,12 +570,12 @@ static void file_File_putc(WrenVM* vm)
             #if !_WIN32
                 if (s[0] == '\n' && file_File_ensureCRLF)
                 {
-                    wrenSetSlotInt(vm, 0, putc('\r', self->file) + putc('\n', self->file));
+                    wrenSetSlotInt(vm, 0, wrench_putc('\r', self->file) + wrench_putc('\n', self->file));
                 }
                 else
             #endif
                 {
-                    wrenSetSlotInt(vm, 0, putc(s[0], self->file));
+                    wrenSetSlotInt(vm, 0, wrench_putc(s[0], self->file));
                 }
             }
             else
@@ -493,12 +604,49 @@ static void file_File_eof(WrenVM* vm)
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
-    wrenSetSlotBool(vm, 0, feof(self->file) != 0);
+    wrenSetSlotBool(vm, 0, wrench_feof(self->file) != 0);
 }
 
 static void file_File_read(WrenVM* vm)
 {
-    WRENCH_STUB();
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    const size_t bytes_requested = (size_t)wrenGetSlotInt(vm, 1);
+    const size_t bytes_remaining = file_File_bytesRemaining_impl(self->file);
+
+    size_t bytes_to_read;
+
+    if (bytes_remaining < bytes_requested)
+    {
+        bytes_to_read = bytes_remaining;
+    }
+    else
+    {
+        bytes_to_read = bytes_requested;
+    }
+
+    // TODO: Try using a stack allocator here.
+    void* data = wrench_malloc(bytes_to_read);
+
+    if (data == NULL)
+    {
+        wrenSetSlotString(vm, 0, "Out of memory - failed to allocate for file read!");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    if (wrench_fread(data, sizeof(char), bytes_to_read, self->file) != bytes_to_read)
+    {
+        wrenSetSlotString(vm, 0, "File read failed.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    wrenSetSlotBytes(vm, 0, (const char*)data, bytes_to_read);
+    wrench_free(data);
 }
 
 /* TODO: Better error handling.
@@ -511,7 +659,31 @@ static void file_File_write_(WrenVM* vm)
     int size;
     const char* data = wrenGetSlotBytes(vm, 1, &size);
 
-    wrenSetSlotInt(vm, 0, fwrite(data, 1, size, self->file));
+    wrenSetSlotInt(vm, 0, wrench_fwrite(data, 1, size, self->file));
+}
+
+static void file_File_bytesConsumed_get(WrenVM* vm)
+{
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    wrenSetSlotInt(vm, 0, (int)file_File_bytesConsumed_impl(self->file));
+}
+
+static void file_File_bytesRemaining_get(WrenVM* vm)
+{
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    wrenSetSlotInt(vm, 0, (int)file_File_bytesRemaining_impl(self->file));
+}
+
+static void file_File_bytesTotal_get(WrenVM* vm)
+{
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    wrenSetSlotInt(vm, 0, (int)file_File_bytesTotal_impl(self->file));
 }
 
 static void file_File_flush(WrenVM* vm)
@@ -519,7 +691,7 @@ static void file_File_flush(WrenVM* vm)
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
-    if (fflush(self->file) != 0)
+    if (wrench_fflush(self->file) != 0)
     {
         /* TODO: Keep/copy the name and mode of the file.
          */
@@ -673,30 +845,39 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_METHOD(file, File, true, open, "(path, mode)", "(_,_)");
             WREN_METHOD(file, File, false, close, "()", "()");
 
+            // TODO: isOpen
             // TODO: collect
-            // TODO: name
-            // TODO: mode
 
-            // TODO: toString
+            WREN_GETTER(file, File, false, path);
+            WREN_GETTER(file, File, false, mode);
+
+            WREN_CODE("toString { \"%(type)(\\\"%(path)\\\", \\\"%(mode)\\\")\" }");
 
             // Write Windows-style line endings on Unix.
             WREN_PROPERTY(file, File, true, ensureCRLF);
 
-            /* XXX: `stdout` et al. are #defined on most platforms, requiring a bit of a workaround here.
-             */
-            WREN_METHOD_EX(file, File, true, stdout, "", "", file_File_stdout);
-            WREN_METHOD_EX(file, File, true, stderr, "", "", file_File_stderr);
-            WREN_METHOD_EX(file, File, true, stdin, "", "", file_File_stdin);
+            WREN_GETTER(file, File, true, stdout);
+            WREN_GETTER(file, File, true, stderr);
+            WREN_GETTER(file, File, true, stdin);
 
             /* XXX: getc and putc are also macros (which is all that differentiates them from fgetc/fputc).
+             * We should probably #undef them in the same way we deal with standard input & output streams.
              */
             WREN_METHOD_EX(file, File, false, getc, "()", "()", file_File_getc);
             WREN_METHOD_EX(file, File, false, putc, "(c)", "(_)", file_File_putc);
 
-            WREN_METHOD_EX(file, File, true, EOF, "", "", file_File_EOF);
+            if (1)
+            {
+                WREN_METHOD_EX(file, File, true, EOF, "", "", file_File_EOF);
+            }
+            else
+            {
+                WREN_CODE("static EOF { " WRENCH_STRINGIFY(EOF) " }");
+            }
+
             WREN_METHOD(file, File, false, eof, "()", "()");
 
-            if (0)
+            if (1)
             {
                 WREN_METHOD(file, File, false, read, "(count)", "(_)");
             }
@@ -724,11 +905,16 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
                 )) { return false; }
             }
 
-            WREN_METHOD(file, File, false, write_, "(string)", "(_)");
+            if (0)
+            {
+                WREN_CODE("read() { read(Num.maxSafeInteger) }");
+            }
+            else
+            {
+                WREN_CODE("read() { read(bytesRemaining) }");
+            }
 
             if (!wrenCode(vm,
-
-            "read() { read(Num.maxSafeInteger) }\n"
 
             "static read(path) {\n"
                 "var file = open(path, \"rb\")\n"
@@ -738,12 +924,17 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
                 "return data\n"
             "}\n"
 
+            )) { return false; }
+
+            WREN_METHOD(file, File, false, write_, "(string)", "(_)");
+
+            if (!wrenCode(vm,
+
             "write(string) {\n"
             #if _WIN32
-                "if (true) {\n"
+                "return write_(string)\n"
             #else
                 "if (!type.ensureCRLF) {\n"
-            #endif
                     "return write_(string)\n"
                 "} else {\n"
                     "var r = 0\n"
@@ -754,15 +945,18 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 
                     "return r\n"
                 "}\n"
+            #endif
             "}\n"
 
             )) { return false; }
 
             // TODO: seek
-            // TODO: tell
-            // TODO: size
+            // TODO: tell (bytesConsumed)
+            // TODO: size (bytesTotal)
 
-            // TODO: bytesRemaining (ftell, fseek to end, fseek to saved pos, return difference)
+            WREN_GETTER(file, File, false, bytesConsumed);
+            WREN_GETTER(file, File, false, bytesRemaining);
+            WREN_GETTER(file, File, false, bytesTotal);
 
             WREN_METHOD(file, File, false, flush, "()", "()");
 
@@ -801,6 +995,8 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             "}\n"
 
             "readLines() { readLines(true) }\n"
+
+            // TODO: readLines(path, strip_newlines)
 
             "static readLines(path) {\n"
                 "var file = open(path, \"rb\")\n"

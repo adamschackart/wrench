@@ -628,6 +628,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_fclose
 #define wrench_fclose fclose
 #endif
+#ifndef wrench_feof
+#define wrench_feof feof
+#endif
+#ifndef wrench_fflush
+#define wrench_fflush fflush
+#endif
 #ifndef wrench_fopen
 #define wrench_fopen fopen
 #endif
@@ -652,6 +658,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_ftell
 #define wrench_ftell ftell
 #endif
+#ifndef wrench_fwrite
+#define wrench_fwrite fwrite
+#endif
+#ifndef wrench_getc
+#define wrench_getc getc
+#endif
 #ifndef wrench_malloc
 #define wrench_malloc malloc
 #endif
@@ -666,6 +678,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_pow
 #define wrench_pow pow
+#endif
+#ifndef wrench_putc
+#define wrench_putc putc
 #endif
 #ifndef wrench_putchar
 #define wrench_putchar putchar
@@ -698,6 +713,15 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
         #define wrench_stderr __stderrp
     #else
         #define wrench_stderr stderr
+    #endif
+#endif
+#if !defined(wrench_stdin)
+    #if _MSC_VER
+        #define wrench_stdin (__acrt_iob_func(0))
+    #elif __APPLE__
+        #define wrench_stdin __stdinp
+    #else
+        #define wrench_stdin stdin
     #endif
 #endif
 #if !defined(wrench_stdout)
