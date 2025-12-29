@@ -944,6 +944,7 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 
             if (0)
             {
+                // FIXME: wrenGetSlotInt fires bogus assert here.
                 WREN_CODE("read() { read(Num.maxSafeInteger) }");
             }
             else

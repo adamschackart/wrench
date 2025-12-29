@@ -181,6 +181,8 @@ class Project {
     isCLI { !isGUI }
     isCLI=(value) { isGUI = !value }
 
+    // TODO: configure(cfg) - get config.Config values for compiler, linker, async, other flags.
+
     build() {
         /*
          * FIXME: This uses the C clock() function, which can be low-resolution and imprecise.
@@ -652,6 +654,7 @@ class ForeignNode {
                 s.add("/Od")
                 s.add("/Zi")
                 s.add("/DEBUG")
+                s.add("/DDEBUG=1")
             } else {
                 if (optimizeForCodeSize) {
                     /*
@@ -677,13 +680,14 @@ class ForeignNode {
                     }
                 }
 
-                s.add("/DNDEBUG")
+                s.add("/DNDEBUG=1")
                 s.add("/INCREMENTAL:NO")
             }
         } else {
             if (debug) {
                 s.add("-O0")
                 s.add("-g")
+                s.add("-DDEBUG=1")
             } else {
                 if (optimizeForCodeSize) {
                     s.add("-Os")
@@ -697,7 +701,7 @@ class ForeignNode {
                     s.add("-flto")
                 }
 
-                s.add("-DNDEBUG")
+                s.add("-DNDEBUG=1")
             }
         }
 
@@ -1685,6 +1689,10 @@ class AmalgamationNode {
         _includesOnly = false
         _addFilenames = true
         _deleteOnClean = true
+        _trimLeft = false
+        _trimRight = false
+        _replacements = []
+        _extraProcessing = null
 
         _project.nodes.add(this)
     }
@@ -1712,6 +1720,22 @@ class AmalgamationNode {
     deleteOnClean { _deleteOnClean }
     deleteOnClean=(value) { _deleteOnClean = value }
 
+    trimLeft { _trimLeft }
+    trimLeft=(value) { _trimLeft = value }
+
+    trimRight { _trimRight }
+    trimRight=(value) { _trimRight = value }
+
+    replacements { _replacements }
+    replacements=(value) { _replacements = value }
+
+    replace(old_string, new_string) {
+        replacements.add([old_string, new_string])
+    }
+
+    extraProcessing { _extraProcessing }
+    extraProcessing=(value) { _extraProcessing = value }
+
     build() {
         var dst_file = File.open(name, "w")
 
@@ -1730,7 +1754,43 @@ class AmalgamationNode {
                     dst_file.write("// %(filename)\n\n")
                 }
 
-                dst_file.write(File.read(filename))
+                var data = File.read(filename)
+
+                if (trimLeft || trimRight) {
+                    var split = data.split("\n")
+
+                    for (i in 0...split.count) {
+                        var line = split[i]
+
+                        if (trimLeft && trimRight) {
+                            split[i] = line.trim()
+                        } else if (trimLeft) {
+                            split[i] = line.trimStart()
+                        } else if (trimRight) {
+                            split[i] = line.trimEnd()
+                        } else {
+                            Fiber.abort("???")
+                        }
+                    }
+
+                    data = split.join("\n")
+                }
+
+                /* TODO: Evaluate/match using regular expressions here.
+                 */
+                for (replacement in replacements) {
+                    data = data.replace(replacement[0], replacement[1])
+                }
+
+                if (extraProcessing != null) {
+                    data = extraProcessing.call(filename, data)
+
+                    if (!(data is String)) {
+                        Fiber.abort("%(type).extraProcessing callback must return a string!")
+                    }
+                }
+
+                dst_file.write(data)
             }
         }
 
@@ -1798,7 +1858,7 @@ var main = Fn.new {
         }
     }
 
-    if (!Path.isFile("wren.c")) {
+    if (true || !Path.isFile("wren.c")) {
         var amalgamator = AmalgamationNode.new(null, "wren.c")
 
         for (filename in Path.list("wren/src/optional")) {
