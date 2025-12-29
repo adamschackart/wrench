@@ -1873,6 +1873,69 @@ var main = Fn.new {
             }
         }
 
+        amalgamator.extraProcessing = Fn.new { |filename, data|
+            if (filename == "wren/src/vm/wren_value.c") {
+                if (false) {
+                    data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+                }
+
+                data = data.replace([
+                    "// Calculates and stores the hash code for [string].",
+                    "static void hashString(ObjString* string)",
+                    "{",
+                    "  // FNV-1a hash. See: http://www.isthe.com/chongo/tech/comp/fnv/",
+                    "  uint32_t hash = 2166136261u;",
+                    "",
+                    "  // This is O(n) on the length of the string, but we only call this when a new",
+                    "  // string is created. Since the creation is also O(n) (to copy/initialize all",
+                    "  // the bytes), we allow this here.",
+                    "  for (uint32_t i = 0; i < string->length; i++)",
+                    "  {",
+                    "    hash ^= string->value[i];",
+                    "    hash *= 16777619;",
+                    "  }",
+                    "",
+                    "  string->hash = hash;",
+                    "}"].join("\n"),
+
+                    "static void hashString(ObjString* string)\n{\n  string->hash = 0;\n}")
+
+                data = data.replace("aString->hash == bString->hash", "true")
+
+                data = data.replace("      return ((ObjString*)object)->hash;",
+                [
+                    "{",
+                    "  ObjString* string = (ObjString*)object;",
+                    "",
+                    "  if (string->hash == 0)",
+                    "  {",
+                    "    uint32_t hash = 0;",
+                    "",
+                    "    for (uint32_t i = 0; i < string->length; i++)",
+                    "    {",
+                    "      #if _MSC_VER",
+                    "        hash = _rotl(hash, 7) + string->value[i];",
+                    "      #elif __GNUC__",
+                    "        hash = __builtin_rotateleft32(hash, 7) + string->value[i];",
+                    "      #else",
+                    "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
+                    "      #endif",
+                    "    }",
+                    "",
+                    "    // Final mixing step.",
+                    "    hash += hash >> 16;",
+                    "",
+                    "    string->hash = hash;",
+                    "  }",
+                    "",
+                    "  return string->hash;",
+                    "}"
+                ].map { |line| " " * 6 + line }.join("\n"))
+            }
+
+            return data
+        }
+
         if (command == "build") {
             amalgamator.build()
         } else if (command == "clean") {
