@@ -360,8 +360,8 @@ while (0)
 /* NOTE: This replaces `if (!(x is Foo)) { Fiber.abort(...) }` in Wren.
  */
 #if WRENCH_DEBUG
-    #ifndef WRENCH_MAGIC_TAG
-    #define WRENCH_MAGIC_TAG const char* _magic_tag
+    #ifndef _WRENCH_MAGIC_TAG
+    #define _WRENCH_MAGIC_TAG const char* _magic_tag;
     #endif
 
     #ifndef WRENCH_CHECK_MAGIC_TAG
@@ -379,8 +379,8 @@ while (0)
     #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((module_name ## _ ## class_name*)(data))->_magic_tag = WRENCH_STRINGIFY(module_name) "_" WRENCH_STRINGIFY(class_name)
     #endif
 #else
-    #ifndef WRENCH_MAGIC_TAG
-    #define WRENCH_MAGIC_TAG
+    #ifndef _WRENCH_MAGIC_TAG
+    #define _WRENCH_MAGIC_TAG
     #endif
 
     #ifndef WRENCH_CHECK_MAGIC_TAG
@@ -391,6 +391,23 @@ while (0)
     #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((void)0)
     #endif
 #endif /* WRENCH_DEBUG */
+
+#ifndef WRENCH_STRUCT_HEADER
+#define WRENCH_STRUCT_HEADER(module_name, class_name)   \
+                                                        \
+    typedef struct module_name ## _ ## class_name       \
+    {                                                   \
+        _WRENCH_MAGIC_TAG                               \
+
+#endif /* WRENCH_STRUCT_HEADER */
+
+#ifndef WRENCH_STRUCT_FOOTER
+#define WRENCH_STRUCT_FOOTER(module_name, class_name)   \
+                                                        \
+    }                                                   \
+    module_name ## _ ## class_name ;                    \
+
+#endif /* WRENCH_STRUCT_FOOTER */
 
 /*
 ================================================================================

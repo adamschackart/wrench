@@ -11,11 +11,8 @@
 #include <subprocess.h/subprocess.h>
 #endif
 
-typedef struct process_Process
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(process, Process)
     struct subprocess_s process;
-}
-process_Process;
+WRENCH_STRUCT_FOOTER(process, Process)
 
 #endif /* __WRENCH_PROCESS_H__ */

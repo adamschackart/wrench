@@ -8,11 +8,8 @@
 #include <libtcc.h>
 #include <wrench.h>
 
-typedef struct tcc_State
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(tcc, State)
     TCCState* state;
-}
-tcc_State;
+WRENCH_STRUCT_FOOTER(tcc, State)
 
 #endif /* __WRENCH_TCC_H__ */

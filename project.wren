@@ -58,6 +58,10 @@ class Project {
         _extraObjects = _project != null ? _project.extraObjects.toList : []
         _libraries = _project != null ? _project.libraries.toList : []
         _async = _project != null ? _project.async : true
+        _enableRTTI = _project != null ? _project.enableRTTI : false
+        _enableExceptions = _project != null ? _project.enableExceptions : false
+        _isGUI = _project != null ? _project.isGUI : false
+        _linkTimeOptimization = _project != null ? _project.linkTime_linkTimeOptimization : true
 
         /* TODO: Platform.logicalCoreCount * 2
          */
@@ -129,7 +133,6 @@ class Project {
     // TODO: libraryPaths
     // TODO: runtimeLibraryPaths
     // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
-    // TODO: linkTimeOptimization
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
 
     // TODO: addressSanitizer
@@ -154,6 +157,29 @@ class Project {
 
     maxAsyncCompileJobs { _maxAsyncCompileJobs }
     maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
+
+    /* Enable/disable C++ run-time type information.
+     */
+    enableRTTI { _enableRTTI }
+    enableRTTI=(value) { _enableRTTI = value }
+
+    disableRTTI { !enableRTTI }
+    disableRTTI=(value) { enableRTTI = !value }
+
+    enableExceptions { _enableExceptions }
+    enableExceptions=(value) { _enableExceptions = value }
+
+    disableExceptions { !enableExceptions }
+    disableExceptions=(value) { enableExceptions = !value }
+
+    linkTimeOptimization { _linkTimeOptimization }
+    linkTimeOptimization=(value) { _linkTimeOptimization = value }
+
+    isGUI { _isGUI }
+    isGUI=(value) { _isGUI = value }
+
+    isCLI { !isGUI }
+    isCLI=(value) { isGUI = !value }
 
     build() {
         /*
@@ -314,6 +340,10 @@ class ForeignNode {
         _async = _project.async
         _maxAsyncCompileJobs = _project.maxAsyncCompileJobs
         _optimizeForCodeSize = _project.optimizeForCodeSize
+        _enableRTTI = _project.enableRTTI
+        _enableExceptions = _project.enableExceptions
+        _isGUI = _project.isGUI
+        _linkTimeOptimization = _project.linkTimeOptimization
 
         _project.nodes.add(this)
     }
@@ -427,7 +457,6 @@ class ForeignNode {
     // TODO: libraryPaths
     // TODO: runtimeLibraryPaths
     // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
-    // TODO: linkTimeOptimization
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
 
     // TODO: addressSanitizer
@@ -452,6 +481,29 @@ class ForeignNode {
 
     maxAsyncCompileJobs { _maxAsyncCompileJobs }
     maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
+
+    /* Enable/disable C++ run-time type information.
+     */
+    enableRTTI { _enableRTTI }
+    enableRTTI=(value) { _enableRTTI = value }
+
+    disableRTTI { !enableRTTI }
+    disableRTTI=(value) { enableRTTI = !value }
+
+    enableExceptions { _enableExceptions }
+    enableExceptions=(value) { _enableExceptions = value }
+
+    disableExceptions { !enableExceptions }
+    disableExceptions=(value) { enableExceptions = !value }
+
+    linkTimeOptimization { _linkTimeOptimization }
+    linkTimeOptimization=(value) { _linkTimeOptimization = value }
+
+    isGUI { _isGUI }
+    isGUI=(value) { _isGUI = value }
+
+    isCLI { !isGUI }
+    isCLI=(value) { isGUI = !value }
 
     compile() {
         var jobs = []
@@ -523,6 +575,10 @@ class ForeignNode {
     clean() {
         for (source in sources) {
             Path.tryRemove(sourceToObject_(source))
+
+            if (compiler != "cl") {
+                Path.tryRemove(sourceToDWARF_(source))
+            }
         }
 
         if (isExecutable) {
@@ -589,44 +645,66 @@ class ForeignNode {
     }
 
     compilerOptimization_ {
+        var s = []
+
         if (compiler == "cl") {
             if (debug) {
-                return "/Od /Zi /DEBUG "
+                s.add("/Od")
+                s.add("/Zi")
+                s.add("/DEBUG")
             } else {
                 if (optimizeForCodeSize) {
                     /*
                      * TODO: Profile difference.
                      */
                     if (false) {
-                        return "/O1 /DNDEBUG "
+                        s.add("/O1")
                     } else if (false) {
-                        return "/Oi /DNDEBUG "
+                        s.add("/Oi")
                     } else {
-                        return "/Os /DNDEBUG "
+                        s.add("/Os")
                     }
                 } else {
                     /*
                      * TODO: Profile difference.
                      */
                     if (true) {
-                        return "/Ox /DNDEBUG "
+                        s.add("/Ox")
                     } else if (true) {
-                        return "/O2 /DNDEBUG "
+                        s.add("/O2")
                     } else {
-                        return "/Ot /DNDEBUG "
+                        s.add("/Ot")
                     }
                 }
+
+                s.add("/DNDEBUG")
+                s.add("/INCREMENTAL:NO")
             }
         } else {
             if (debug) {
-                return "-O0 -g "
+                s.add("-O0")
+                s.add("-g")
             } else {
                 if (optimizeForCodeSize) {
-                    return "-Os -DNDEBUG "
+                    s.add("-Os")
                 } else {
-                    return "-O3 -DNDEBUG "
+                    s.add("-O3")
                 }
+
+                /* XXX: Some versions of `ar` don't like link-time optimization.
+                 */
+                if (linkTimeOptimization && !isStaticLibrary) {
+                    s.add("-flto")
+                }
+
+                s.add("-DNDEBUG")
             }
+        }
+
+        if (s.isEmpty) {
+            return ""
+        } else {
+            return s.join(" ") + " "
         }
     }
 
@@ -676,17 +754,62 @@ class ForeignNode {
         /*
          * Only build object files, don't link.
          */
+        var s = []
+
         if (compiler == "cl") {
-            var s = "/nologo /c "
+            s.add("/nologo")
+            s.add("/c")
+
+            // For very large builds.
+            s.add("/bigobj")
 
             // Sync PDB writes.
             if (async) {
-                s = s + "/FS "
+                s.add("/FS")
             }
 
-            return s
+            if (enableRTTI) {
+                s.add("/GR")
+            } else {
+                s.add("/GR-")
+            }
+
+            if (enableExceptions) {
+                /*
+                 * TODO: Profile difference.
+                 */
+                if (true) {
+                    s.add("/EHsc")
+                } else {
+                    s.add("/EHa")
+                }
+            } else {
+                // Implicitly disabled.
+            }
         } else {
-            return "-fPIC -c "
+            s.add("-fPIC")
+            s.add("-c")
+
+            // For very large builds.
+            s.add("-gsplit-dwarf")
+
+            if (enableRTTI) {
+                s.add("-frtti")
+            } else {
+                s.add("-fno-rtti")
+            }
+
+            if (enableExceptions) {
+                s.add("-fexceptions")
+            } else {
+                s.add("-fno-exceptions")
+            }
+        }
+
+        if (s.isEmpty) {
+            return ""
+        } else {
+            return s.join(" ") + " "
         }
     }
 
@@ -732,7 +855,8 @@ class ForeignNode {
             } else if (linkerName == "tcc") {
                 linkerName = "tcc -ar"
             } else {
-                linkerName = "ar rcs"
+                // TODO: Profile the difference here.
+                linkerName = /*"gcc-" +*/ "ar rcs"
             }
         }
 
@@ -740,10 +864,31 @@ class ForeignNode {
     }
 
     linkerPlatformFlags_ {
+        var s = []
+
         if (linker == "link") {
-            return "/nologo "
+            s.add("/nologo")
+
+            if (isExecutable) {
+                s.add("/SUBSYSTEM:" + (isGUI ? "WINDOWS" : "CONSOLE"))
+            }
+
+            if (release && linkTimeOptimization && sources.count > 1) {
+                s.add("/LTCG")
+            }
         } else {
+            /*
+             * XXX: Some versions of `ar` don't like link-time optimization.
+             */
+            if (release && linkTimeOptimization && !isStaticLibrary) {
+                s.add("-flto")
+            }
+        }
+
+        if (s.isEmpty) {
             return ""
+        } else {
+            return s.join(" ") + " "
         }
     }
 
@@ -818,6 +963,18 @@ class ForeignNode {
          * XXX TODO FIXME: This is an ugly and gross hack. Strip extension using the `file.Path` module.
          */
         var s = source.replace(".cpp", platformObjectExtension_).replace(".c", platformObjectExtension_)
+
+        s = s.split("\\")[-1]
+        s = s.split("/")[-1]
+
+        return s
+    }
+
+    sourceToDWARF_(source) {
+        /*
+         * XXX TODO FIXME: This is an ugly and gross hack. Strip extension using the `file.Path` module.
+         */
+        var s = source.replace(".cpp", ".dwo").replace(".c", ".dwo")
 
         s = s.split("\\")[-1]
         s = s.split("/")[-1]

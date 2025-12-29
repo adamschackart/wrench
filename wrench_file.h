@@ -7,16 +7,12 @@
 
 #include <wrench.h>
 
-typedef struct file_File
-{
-    WRENCH_MAGIC_TAG;
-
+WRENCH_STRUCT_HEADER(file, File)
     bool collect;
     FILE* file;
 
     char* path;
     char* mode;
-}
-file_File;
+WRENCH_STRUCT_FOOTER(file, File)
 
 #endif /* __WRENCH_FILE_H__ */

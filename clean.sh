@@ -15,3 +15,4 @@ rm -rf *.a
 rm -rf *.o
 rm -rf *.so
 rm -rf *.dSYM
+rm -rf *.dwo

@@ -10,11 +10,8 @@
 // Forward declare.
 struct zip_t;
 
-typedef struct zip_Archive
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(zip, Archive)
     struct zip_t* zip;
-}
-zip_Archive;
+WRENCH_STRUCT_FOOTER(zip, Archive)
 
 #endif /* __WRENCH_ZIP_H__ */

@@ -7,16 +7,12 @@
 
 #include <wrench.h>
 
-typedef struct image_Image
-{
-    WRENCH_MAGIC_TAG;
-
+WRENCH_STRUCT_HEADER(image, Image)
     void* pixels;
     int width;
     int height;
     int color_channels;
     int bytes_per_channel;
-}
-image_Image;
+WRENCH_STRUCT_FOOTER(image, Image)
 
 #endif /* __WRENCH_IMAGE_H__ */

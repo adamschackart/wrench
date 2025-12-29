@@ -7,25 +7,16 @@
 
 #include <wrench.h>
 
-typedef struct rect_IntRect
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(rect, IntRect)
     int xywh[4];
-}
-rect_IntRect;
+WRENCH_STRUCT_FOOTER(rect, IntRect)
 
-typedef struct rect_FltRect
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(rect, FltRect)
     float xywh[4];
-}
-rect_FltRect;
+WRENCH_STRUCT_FOOTER(rect, FltRect)
 
-typedef struct rect_DblRect
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(rect, DblRect)
     double xywh[4];
-}
-rect_DblRect;
+WRENCH_STRUCT_FOOTER(rect, DblRect)
 
 #endif /* __WRENCH_RECT_H__ */

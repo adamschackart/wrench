@@ -7,34 +7,22 @@
 
 #include <wrench.h>
 
-typedef struct vector_IntVector
-{
-    WRENCH_MAGIC_TAG;
-
+WRENCH_STRUCT_HEADER(vector, IntVector)
     size_t dimensions;
     int* elements;
     bool collect;
-}
-vector_IntVector;
+WRENCH_STRUCT_FOOTER(vector, IntVector)
 
-typedef struct vector_FltVector
-{
-    WRENCH_MAGIC_TAG;
-
+WRENCH_STRUCT_HEADER(vector, FltVector)
     size_t dimensions;
     float* elements;
     bool collect;
-}
-vector_FltVector;
+WRENCH_STRUCT_FOOTER(vector, FltVector)
 
-typedef struct vector_DblVector
-{
-    WRENCH_MAGIC_TAG;
-
+WRENCH_STRUCT_HEADER(vector, DblVector)
     size_t dimensions;
     double* elements;
     bool collect;
-}
-vector_DblVector;
+WRENCH_STRUCT_FOOTER(vector, DblVector)
 
 #endif /* __WRENCH_VECTOR_H__ */

@@ -7,25 +7,19 @@
 
 #include <wrench.h>
 
-typedef struct vm_WrenConfiguration
-{
-    WRENCH_MAGIC_TAG;
-
-    /* Avoid an extra allocation.
+WRENCH_STRUCT_HEADER(vm, WrenConfiguration)
+    /*
+     * Avoid an extra allocation.
      */
     WrenConfiguration* config;
     WrenConfiguration _config;
-}
-vm_WrenConfiguration;
+WRENCH_STRUCT_FOOTER(vm, WrenConfiguration)
 
-typedef struct vm_WrenVM
-{
-    WRENCH_MAGIC_TAG;
+WRENCH_STRUCT_HEADER(vm, WrenVM)
     WrenVM* vm;
 
     bool extended;
     bool collect;
-}
-vm_WrenVM;
+WRENCH_STRUCT_FOOTER(vm, WrenVM)
 
 #endif /* __WRENCH_VM_H__ */
