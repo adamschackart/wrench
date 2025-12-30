@@ -640,6 +640,9 @@ static void file_File_read(WrenVM* vm)
     const size_t bytes_requested = (size_t)wrenGetSlotInt(vm, 1);
     const size_t bytes_remaining = file_File_bytesRemaining_impl(self->file);
 
+    wrench_assert(bytes_remaining != SIZE_MAX, "");
+
+    // Avoid over-allocating in case huge values are passed.
     size_t bytes_to_read;
 
     if (bytes_remaining < bytes_requested)
@@ -749,6 +752,8 @@ static void file_File_readLine(WrenVM* vm)
     /* Over-allocate.
      */
     const size_t bytes_remaining = file_File_bytesRemaining_impl(self->file);
+    wrench_assert(bytes_remaining != SIZE_MAX, "");
+
     char* data = (char*)wrenStackMalloc(vm, bytes_remaining);
 
     if (data == NULL)

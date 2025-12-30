@@ -64,7 +64,7 @@ var patchWrenAmalgamation = Fn.new { |filename, data|
             ][-1..0].each { |line| lines.insert(index, line) }
         }
 
-        /* Faster Sequence.where (removes redunant call to iteratorValue), thanks to Thorben Krüger.
+        /* Faster Sequence.where (removes redundant call to iteratorValue), thanks to Thorben Krüger.
          */
         index = lines.indexOf("class WhereSequence is Sequence {")
 
@@ -184,6 +184,25 @@ var patchWrenAmalgamation = Fn.new { |filename, data|
     return data
 }
 
+/* Remove #include "foo.h" statements from wren.c, and insert opcodes + builtin stdlib modules.
+ */
+var removeWrenIncludes = Fn.new { |filename, data|
+    data = data.replace("#include \"wren_opcodes.h\"", File.read("wren/src/vm/wren_opcodes.h"))
+
+    data = data.replace("#include \"wren_opt_meta.wren.inc\"",
+        "const char* metaModuleSource =\n" +
+        File.readLines("wren/src/optional/wren_opt_meta.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
+        ";")
+
+    data = data.replace("#include \"wren_opt_random.wren.inc\"",
+        "const char* randomModuleSource =\n" +
+        File.readLines("wren/src/optional/wren_opt_random.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
+        ";")
+
+    data = data.replace("#include \"", "//#include \"")
+    return data
+}
+
 /*
 ================================================================================
  * ~~ [ project ] ~~ *
@@ -239,6 +258,8 @@ class Project {
         _enableExceptions = _project != null ? _project.enableExceptions : false
         _isGUI = _project != null ? _project.isGUI : false
         _linkTimeOptimization = _project != null ? _project.linkTime_linkTimeOptimization : true
+        _finalizeCompilerCommandLine = _project != null ? _project.finalizeCompilerCommandLine : null
+        _finalizeLinkerCommandLine = _project != null ? _project.finalizeLinkerCommandLine : null
 
         /* TODO: Platform.logicalCoreCount * 2
          */
@@ -361,6 +382,12 @@ class Project {
 
     isCLI { !isGUI }
     isCLI=(value) { isGUI = !value }
+
+    finalizeCompilerCommandLine { _finalizeCompilerCommandLine }
+    finalizeCompilerCommandLine=(value) { _finalizeCompilerCommandLine = value }
+
+    finalizeLinkerCommandLine { _finalizeLinkerCommandLine }
+    finalizeLinkerCommandLine=(value) { _finalizeLinkerCommandLine = value }
 
     // TODO: configure(cfg) - get config.Config values for compiler, linker, async, other flags.
 
@@ -530,6 +557,8 @@ class ForeignNode {
         _enableExceptions = _project.enableExceptions
         _isGUI = _project.isGUI
         _linkTimeOptimization = _project.linkTimeOptimization
+        _finalizeCompilerCommandLine = _project.finalizeCompilerCommandLine
+        _finalizeLinkerCommandLine = _project.finalizeLinkerCommandLine
 
         _project.nodes.add(this)
     }
@@ -694,6 +723,12 @@ class ForeignNode {
 
     isCLI { !isGUI }
     isCLI=(value) { isGUI = !value }
+
+    finalizeCompilerCommandLine { _finalizeCompilerCommandLine }
+    finalizeCompilerCommandLine=(value) { _finalizeCompilerCommandLine = value }
+
+    finalizeLinkerCommandLine { _finalizeLinkerCommandLine }
+    finalizeLinkerCommandLine=(value) { _finalizeLinkerCommandLine = value }
 
     compile() {
         var jobs = []
@@ -1024,16 +1059,26 @@ class ForeignNode {
     }
 
     compilerCommandLine_(filename) {
-        return (compilerName_(filename) +
-                compilerIncludePaths_ +
-                compilerOptimization_ +
-                compilerDefines_ +
-                compilerUndefines_ +
-                compilerPlatformFlags_ +
-                compilerExtraFlags_ +
-                filename +
-                compilerLibraries_ +
-                compilerLibraryPaths_)
+        var data = (compilerName_(filename) +
+                    compilerIncludePaths_ +
+                    compilerOptimization_ +
+                    compilerDefines_ +
+                    compilerUndefines_ +
+                    compilerPlatformFlags_ +
+                    compilerExtraFlags_ +
+                    filename +
+                    compilerLibraries_ +
+                    compilerLibraryPaths_)
+
+        if (finalizeCompilerCommandLine != null) {
+            data = finalizeCompilerCommandLine.call(filename, data)
+
+            if (!(data is String)) {
+                Fiber.abort("finalizeCompilerCommandLine must return a string!")
+            }
+        }
+
+        return data
     }
 
     // ===== [ platform-specific implementation details (linker) ] =============
@@ -1241,13 +1286,23 @@ class ForeignNode {
     }
 
     linkerCommandLine_ {
-        return (linkerName_ +
-                linkerPlatformFlags_ +
-                linkerExtraFlags_ +
-                linkerOutput_ +
-                linkerObjects_ +
-                linkerLibraries_ +
-                linkerLibraryPaths_)
+        var data = (linkerName_ +
+                    linkerPlatformFlags_ +
+                    linkerExtraFlags_ +
+                    linkerOutput_ +
+                    linkerObjects_ +
+                    linkerLibraries_ +
+                    linkerLibraryPaths_)
+
+        if (finalizeLinkerCommandLine != null) {
+            data = finalizeLinkerCommandLine.call(data)
+
+            if (!(data is String)) {
+                Fiber.abort("finalizeLinkerCommandLine must return a string!")
+            }
+        }
+
+        return data
     }
 }
 
@@ -1533,6 +1588,8 @@ class CopyNode {
     deleteDstOnClean { _deleteDstOnClean }
     deleteDstOnClean=(value) { _deleteDstOnClean = value }
 
+    // TODO: extraProcessing
+
     build() {
         if (verbose) {
             System.print("copying \"%(src)\" to \"%(dst)\"")
@@ -1652,6 +1709,8 @@ class HeaderNode {
 
     extraIndentation { _extraIndentation }
     extraIndentation=(value) { _extraIndentation = value }
+
+    // TODO: extraProcessing
 
     build() {
         if (verbose) {
@@ -2023,6 +2082,9 @@ var main = Fn.new {
     var command
     var mode
 
+    var previousEnsureCRLF = File.ensureCRLF
+    File.ensureCRLF = true
+
     if (WrenVM.self.commandLine.count < 3) {
         command = "build"
     } else {
@@ -2092,19 +2154,7 @@ var main = Fn.new {
             data = patchWrenAmalgamation.call(filename, data)
 
             if (include_headers) {
-                data = data.replace("#include \"wren_opcodes.h\"", File.read("wren/src/vm/wren_opcodes.h"))
-
-                data = data.replace("#include \"wren_opt_meta.wren.inc\"",
-                    "const char* metaModuleSource =\n" +
-                    File.readLines("wren/src/optional/wren_opt_meta.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
-                    ";")
-
-                data = data.replace("#include \"wren_opt_random.wren.inc\"",
-                    "const char* randomModuleSource =\n" +
-                    File.readLines("wren/src/optional/wren_opt_random.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
-                    ";")
-
-                data = data.replace("#include \"", "//#include \"")
+                data = removeWrenIncludes.call(filename, data)
             }
 
             return data
@@ -2237,4 +2287,6 @@ var main = Fn.new {
     } else {
         Fiber.abort("Invalid command \"%(command)\".")
     }
+
+    File.ensureCRLF = previousEnsureCRLF
 }
