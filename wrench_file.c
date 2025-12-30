@@ -737,6 +737,68 @@ static void file_File_flush(WrenVM* vm)
     }
 }
 
+static void file_File_readLine(WrenVM* vm)
+{
+    /* TODO: Win32 getline().
+     */
+    file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, file, File);
+
+    const bool strip_newline = wrenGetSlotBool(vm, 1);
+
+    /* Over-allocate.
+     */
+    const size_t bytes_remaining = file_File_bytesRemaining_impl(self->file);
+    char* data = (char*)wrenStackMalloc(vm, bytes_remaining);
+
+    if (data == NULL)
+    {
+        data = (char*)wrench_malloc(bytes_remaining);
+    }
+
+    if (data == NULL)
+    {
+        wrenSetSlotString(vm, 0, "Out of memory - failed to allocate for file readLine!");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    size_t i = 0;
+    while (true)
+    {
+        const int c = wrench_getc(self->file);
+
+        if (c == EOF)
+        {
+            break;
+        }
+
+        data[i++] = (char)c;
+
+        if (c == '\n')
+        {
+            if (strip_newline)
+            {
+                data[--i] = 0;
+            }
+
+            break;
+        }
+    }
+
+    wrenSetSlotBytes(vm, 0, (const char*)data, i);
+
+    if (wrenIsStackMemory(vm, data))
+    {
+        wrenStackFree(vm, data, bytes_remaining);
+    }
+    else
+    {
+        wrench_free(data);
+    }
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -998,27 +1060,36 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 
             WREN_METHOD(file, File, false, flush, "()", "()");
 
-            /* TODO: Native/foreign methods for performance.
-             */
-            if (!wrenCode(vm,
+            if (1)
+            {
+                WREN_METHOD(file, File, false, readLine, "(strip_newline)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
 
-            "readLine(strip_newlines) {\n"
-                "var s = []\n"
+                "readLine(strip_newline) {\n"
+                    "var s = []\n"
 
-                "while (!eof()) {\n"
-                    "s.insert(-1, read(1))\n"
+                    "while (!eof()) {\n"
+                        "s.insert(-1, read(1))\n"
 
-                    "if (s[-1] == \"\\n\") {\n"
-                        "if (strip_newlines) {\n"
-                            "s.removeAt(-1)\n"
+                        "if (s[-1] == \"\\n\") {\n"
+                            "if (strip_newline) {\n"
+                                "s.removeAt(-1)\n"
+                            "}\n"
+
+                            "break\n"
                         "}\n"
-
-                        "break\n"
                     "}\n"
+
+                    "return s.join()\n"
                 "}\n"
 
-                "return s.join()\n"
-            "}\n"
+                )) { return false; }
+            }
+
+            if (!wrenCode(vm,
 
             "readLine() { readLine(true) }\n"
 
@@ -1034,14 +1105,16 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
 
             "readLines() { readLines(true) }\n"
 
-            // TODO: readLines(path, strip_newlines)
-
-            "static readLines(path) {\n"
+            "static readLines(path, strip_newlines) {\n"
                 "var file = open(path, \"rb\")\n"
-                "var text = file.readLines()\n"
+                "var text = file.readLines(strip_newlines)\n"
 
                 "file.close()\n"
                 "return text\n"
+            "}\n"
+
+            "static readLines(path) {\n"
+                "return readLines(path, true)\n"
             "}\n"
 
             )) { return false; }

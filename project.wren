@@ -3,11 +3,179 @@
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
 ----------------------------------------------------------------------------- */
 import "file" for File, Path
-import "meta" for Meta
 import "platform" for Platform
 import "process" for Process
 import "util" for NumUtil, StringUtil
 import "vm" for WrenVM
+
+/*
+================================================================================
+ * ~~ [ utilities ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+/* XXX: This should go in StringUtil, but we've got enough escape chars here.
+ */
+var escapeString = Fn.new { |s|
+    return s.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+}
+
+var patchWrenAmalgamation = Fn.new { |filename, data|
+    if (filename == "wren/src/vm/wren_core.c") {
+        var index
+        var lines = File.readLines("wren/src/vm/wren_core.wren")
+
+        /* Sequence.find, thanks to Michael Hermier. Don't call inside Wrench,
+         * as we must be able to rely on vanilla Wren to bootstrap the build.
+         * If we really need it for whatever reason, create SequenceUtil.find.
+         *
+         * "Returns an iterator on the sequence that pass the function `predicate`,
+         * starting from the begining of the sequence or `it` if provided.
+         *
+         * It is a runtime error if `it` is not a valid iterator value on the sequence."
+         */
+        index = lines.indexOf("  isEmpty { iterate(null) ? false : true }")
+
+        if (index < 0) {
+            Fiber.abort("failed to patch wren core for Sequence.find")
+        } else {
+            [
+                "  find(predicate) { find(iterate(null), predicate) }",
+                "",
+                "  find(it, predicate) {",
+                "    while(it) {",
+                "      if (predicate.call(iteratorValue(it))) break",
+                "      it = iterate(it)",
+                "    }",
+                "    return it",
+                "}",
+                "",
+            ][-1..0].each { |line| lines.insert(index, line) }
+        }
+
+        /* Faster Sequence.where (removes redunant call to iteratorValue), thanks to Thorben Krüger.
+         */
+        index = lines.indexOf("class WhereSequence is Sequence {")
+
+        if (index < 0) {
+            Fiber.abort("failed to patch wren core for faster Sequence.where")
+        } else {
+            [
+                "    _cache_val = null",
+                "    _cache_iter = null"
+            ][-1..0].each { |line| lines.insert(index + 4, line) }
+
+            lines[index + 10] = "      var val = _sequence.iteratorValue(iterator)"
+
+            [
+                "      if (_fn.call(val)) {",
+                "        _cache_val = val",
+                "        _cache_iter = iterator",
+                "        break",
+                "      }",
+            ][-1..0].each { |line| lines.insert(index + 11, line) }
+
+            lines[index + 20] = "  iteratorValue(iterator) {"
+
+            [
+                "    if (iterator == _cache_iter) return _cache_val else return _sequence.iteratorValue(iterator)",
+                "  }",
+            ][-1..0].each { |line| lines.insert(index + 21, line) }
+        }
+
+        /* Headerize core module source.
+         */
+        data = data.replace("#include \"wren_core.wren.inc\"",
+
+        "static const char* coreModuleSource =\n" +
+        lines.map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
+        ";")
+    } else if (filename == "wren/src/vm/wren_value.c") {
+        if (false) {
+            data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+        }
+
+        /* Lazy + faster string hashing.
+         */
+        data = data.replace([
+            "// Calculates and stores the hash code for [string].",
+            "static void hashString(ObjString* string)",
+            "{",
+            "  // FNV-1a hash. See: http://www.isthe.com/chongo/tech/comp/fnv/",
+            "  uint32_t hash = 2166136261u;",
+            "",
+            "  // This is O(n) on the length of the string, but we only call this when a new",
+            "  // string is created. Since the creation is also O(n) (to copy/initialize all",
+            "  // the bytes), we allow this here.",
+            "  for (uint32_t i = 0; i < string->length; i++)",
+            "  {",
+            "    hash ^= string->value[i];",
+            "    hash *= 16777619;",
+            "  }",
+            "",
+            "  string->hash = hash;",
+            "}"].join("\n"),
+
+            "static void hashString(ObjString* string)\n{\n  string->hash = 0;\n}")
+
+        data = data.replace("aString->hash == bString->hash", "true")
+
+        data = data.replace("      return ((ObjString*)object)->hash;",
+        [
+            "{",
+            "  ObjString* string = (ObjString*)object;",
+            "",
+            "  if (string->hash == 0)",
+            "  {",
+            "    uint32_t hash = 0;",
+            "",
+            "    for (uint32_t i = 0; i < string->length; i++)",
+            "    {",
+            "      #if _MSC_VER",
+            "        hash = _rotl(hash, 7) + string->value[i];",
+            "      #elif __GNUC__",
+            "        hash = __builtin_rotateleft32(hash, 7) + string->value[i];",
+            "      #else",
+            "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
+            "      #endif",
+            "    }",
+            "",
+            "    // Final mixing step.",
+            "    hash += hash >> 16;",
+            "",
+            "    string->hash = hash;",
+            "  }",
+            "",
+            "  return string->hash;",
+            "}",
+        ].map { |line| "  " * 2 + line }.join("\n"))
+
+        /* Better hash combination.
+         */
+        data = data.replace("// Generates a hash code for [object].",
+        [
+            "static inline uint32_t hashTwoNumbers(double a, double b)",
+            "{",
+            "  uint32_t lhs = hashNumber(a);",
+            "  uint32_t rhs = hashNumber(b);",
+            "",
+            "  lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);",
+            "  return lhs;",
+            "}",
+            "",
+            "// Generates a hash code for [object].",
+        ].join("\n"))
+
+        data = data.replace("hashNumber(fn->arity) ^ hashNumber(fn->code.count)", "hashTwoNumbers(fn->arity, fn->code.count)")
+        data = data.replace("hashNumber(range->from) ^ hashNumber(range->to)", "hashTwoNumbers(range->from, range->to)")
+    }
+
+    return data
+}
 
 /*
 ================================================================================
@@ -134,6 +302,10 @@ class Project {
     // TODO: runtimeLibraryPaths
     // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
+    // TODO: extraWarnings (-Wall, -Wextra, -Wpedantic, etc)
+    // TODO: extraCleanFiles
+    // TODO: extraCompilerFlagsPerFile ({ filename : flags })
+    // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
     // TODO: addressSanitizer
     // TODO: threadSanitizer
@@ -460,6 +632,10 @@ class ForeignNode {
     // TODO: runtimeLibraryPaths
     // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
+    // TODO: extraWarnings (-Wall, -Wextra, -Wpedantic, etc)
+    // TODO: extraCleanFiles
+    // TODO: extraCompilerFlagsPerFile ({ filename : flags })
+    // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
     // TODO: addressSanitizer
     // TODO: threadSanitizer
@@ -1117,6 +1293,10 @@ class WrenNode {
         }
 
         if (buildFunc is String) {
+            /*
+             * Import locally in case we built without it.
+             */
+            import "meta" for Meta
             return Meta.eval(buildFunc)
         }
 
@@ -1129,6 +1309,7 @@ class WrenNode {
         }
 
         if (cleanFunc is String) {
+            import "meta" for Meta
             return Meta.eval(cleanFunc)
         }
 
@@ -1142,6 +1323,7 @@ class WrenNode {
             }
 
             if (finishBuildFunc is String) {
+                import "meta" for Meta
                 return Meta.eval(finishBuildFunc)
             }
 
@@ -1152,6 +1334,7 @@ class WrenNode {
             }
 
             if (finishCleanFunc is String) {
+                import "meta" for Meta
                 return Meta.eval(finishCleanFunc)
             }
 
@@ -1535,7 +1718,7 @@ class HeaderNode {
                 }
 
                 var indentation = (line.count - line.trimStart().count) + extraIndentation
-                line = escapeString_(line.trim())
+                line = escapeString.call(line.trim())
 
                 if (line == "") {
                     dst_file.write("\n")
@@ -1567,7 +1750,7 @@ class HeaderNode {
                     break
                 }
 
-                line = escapeString_(line.trimEnd())
+                line = escapeString.call(line.trimEnd())
 
                 dst_file.write("\"")
                 dst_file.write(line)
@@ -1663,14 +1846,6 @@ class HeaderNode {
         dst_file.write("{\n")
         dst_file.write("    %(StringUtil.toLower(name))WrenQuitEx();\n")
         dst_file.write("}\n")
-    }
-
-    escapeString_(s) {
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
     }
 }
 
@@ -1873,68 +2048,7 @@ var main = Fn.new {
             }
         }
 
-        amalgamator.extraProcessing = Fn.new { |filename, data|
-            if (filename == "wren/src/vm/wren_value.c") {
-                if (false) {
-                    data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
-                }
-
-                data = data.replace([
-                    "// Calculates and stores the hash code for [string].",
-                    "static void hashString(ObjString* string)",
-                    "{",
-                    "  // FNV-1a hash. See: http://www.isthe.com/chongo/tech/comp/fnv/",
-                    "  uint32_t hash = 2166136261u;",
-                    "",
-                    "  // This is O(n) on the length of the string, but we only call this when a new",
-                    "  // string is created. Since the creation is also O(n) (to copy/initialize all",
-                    "  // the bytes), we allow this here.",
-                    "  for (uint32_t i = 0; i < string->length; i++)",
-                    "  {",
-                    "    hash ^= string->value[i];",
-                    "    hash *= 16777619;",
-                    "  }",
-                    "",
-                    "  string->hash = hash;",
-                    "}"].join("\n"),
-
-                    "static void hashString(ObjString* string)\n{\n  string->hash = 0;\n}")
-
-                data = data.replace("aString->hash == bString->hash", "true")
-
-                data = data.replace("      return ((ObjString*)object)->hash;",
-                [
-                    "{",
-                    "  ObjString* string = (ObjString*)object;",
-                    "",
-                    "  if (string->hash == 0)",
-                    "  {",
-                    "    uint32_t hash = 0;",
-                    "",
-                    "    for (uint32_t i = 0; i < string->length; i++)",
-                    "    {",
-                    "      #if _MSC_VER",
-                    "        hash = _rotl(hash, 7) + string->value[i];",
-                    "      #elif __GNUC__",
-                    "        hash = __builtin_rotateleft32(hash, 7) + string->value[i];",
-                    "      #else",
-                    "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
-                    "      #endif",
-                    "    }",
-                    "",
-                    "    // Final mixing step.",
-                    "    hash += hash >> 16;",
-                    "",
-                    "    string->hash = hash;",
-                    "  }",
-                    "",
-                    "  return string->hash;",
-                    "}"
-                ].map { |line| " " * 6 + line }.join("\n"))
-            }
-
-            return data
-        }
+        amalgamator.extraProcessing = patchWrenAmalgamation
 
         if (command == "build") {
             amalgamator.build()
@@ -1973,6 +2087,13 @@ var main = Fn.new {
     if (!Platform.isWindows) {
         project.libraries.add("m")
         project.libraries.add("dl")
+    }
+
+    if (false) {
+        project.define("WREN_NAN_TAGGING", 0)
+        project.define("WREN_COMPUTED_GOTO", 0)
+        project.define("WREN_OPT_META", 0)
+        project.define("WREN_OPT_RANDOM", 0)
     }
 
     var wren = ForeignNode.new(project, "wren", "static_library")

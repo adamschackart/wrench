@@ -634,6 +634,8 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
                 )) { return false; }
             }
 
+            // TODO: Fuzzy string matching.
+
             if (!utilStringUtilWrenInitEx(vm))
             {
                 return false;

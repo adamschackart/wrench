@@ -4074,6 +4074,8 @@ int WRENCH_MAIN(int argc, char** argv)
 
     WrenInterpretResult result;
 
+    // TODO: Option to eval a Wren string, similar to Python's -c command-line arg.
+
     if (wrench_strstr(argv[1], ".wren") != NULL)
     {
         const char* code = wrenLoadSourceFile(vm, argv[1], NULL);
