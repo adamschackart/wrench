@@ -29,6 +29,10 @@ var escapeString = Fn.new { |s|
  */
 var patchWrenAmalgamation = Fn.new { |filename, data|
     if (filename == "wren/src/vm/wren_core.c") {
+        if (false) {
+            data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+        }
+
         var index
         var lines = File.readLines("wren/src/vm/wren_core.wren")
 
@@ -2053,6 +2057,24 @@ var main = Fn.new {
 
     if (true || !Path.isFile("wren.c")) {
         var amalgamator = AmalgamationNode.new(null, "wren.c")
+        var include_headers = true
+
+        if (include_headers) {
+            amalgamator.sources.add("wren/src/include/wren.h")
+
+            amalgamator.sources.add("wren/src/optional/wren_opt_meta.h")
+            amalgamator.sources.add("wren/src/optional/wren_opt_random.h")
+
+            amalgamator.sources.add("wren/src/vm/wren_common.h")
+            amalgamator.sources.add("wren/src/vm/wren_core.h")
+            amalgamator.sources.add("wren/src/vm/wren_utils.h")
+            amalgamator.sources.add("wren/src/vm/wren_math.h")
+            amalgamator.sources.add("wren/src/vm/wren_value.h")
+            amalgamator.sources.add("wren/src/vm/wren_primitive.h")
+            amalgamator.sources.add("wren/src/vm/wren_debug.h")
+            amalgamator.sources.add("wren/src/vm/wren_compiler.h")
+            amalgamator.sources.add("wren/src/vm/wren_vm.h")
+        }
 
         for (filename in Path.list("wren/src/optional")) {
             if (filename.endsWith(".c")) {
@@ -2066,7 +2088,27 @@ var main = Fn.new {
             }
         }
 
-        amalgamator.extraProcessing = patchWrenAmalgamation
+        amalgamator.extraProcessing = Fn.new { |filename, data|
+            data = patchWrenAmalgamation.call(filename, data)
+
+            if (include_headers) {
+                data = data.replace("#include \"wren_opcodes.h\"", File.read("wren/src/vm/wren_opcodes.h"))
+
+                data = data.replace("#include \"wren_opt_meta.wren.inc\"",
+                    "const char* metaModuleSource =\n" +
+                    File.readLines("wren/src/optional/wren_opt_meta.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
+                    ";")
+
+                data = data.replace("#include \"wren_opt_random.wren.inc\"",
+                    "const char* randomModuleSource =\n" +
+                    File.readLines("wren/src/optional/wren_opt_random.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
+                    ";")
+
+                data = data.replace("#include \"", "//#include \"")
+            }
+
+            return data
+        }
 
         if (command == "build") {
             amalgamator.build()
