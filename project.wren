@@ -14,7 +14,8 @@ import "vm" for WrenVM
 --------------------------------------------------------------------------------
 */
 
-/* XXX: This should go in StringUtil, but we've got enough escape chars here.
+/* Enables us to safely embed code (or any other type of text) within a string.
+ * XXX: This should go in StringUtil, but we've got enough escape chars here...
  */
 var escapeString = Fn.new { |s|
     return s.replace("\\", "\\\\")
@@ -24,6 +25,8 @@ var escapeString = Fn.new { |s|
             .replace("\t", "\\t")
 }
 
+/* Modifies wren.c with performance improvements and some extra functionality.
+ */
 var patchWrenAmalgamation = Fn.new { |filename, data|
     if (filename == "wren/src/vm/wren_core.c") {
         var index
@@ -183,6 +186,8 @@ var patchWrenAmalgamation = Fn.new { |filename, data|
 --------------------------------------------------------------------------------
 */
 
+/* The root node of the build tree, keeps list of nodes (can be other projects).
+ */
 class Project {
     /*
      * TODO: Export to cmake, premake, make, Visual Studio project files, etc.
@@ -485,6 +490,9 @@ class Project {
 --------------------------------------------------------------------------------
 */
 
+/* Node for executables, static or shared libraries, object files, etc.
+ * Anything that requires a compiler, a linker, and/or an assembler.
+ */
 class ForeignNode {
     /*
      * TODO: Node base class to avoid some of this repetitive boilerplate.
@@ -1245,6 +1253,8 @@ class ForeignNode {
 --------------------------------------------------------------------------------
 */
 
+/* Node for running arbitrary Wren code during the build or cleanup phase.
+ */
 class WrenNode {
     /*
      * TODO: async - spawn thread with its own VM, transfer results to main VM?
@@ -1345,6 +1355,8 @@ class WrenNode {
     }
 }
 
+/* Node for running arbitrary programs during the build or cleanup phase.
+ */
 class ProcessNode {
     construct new(project, name, buildCommand, cleanCommand) {
         if (project == null) {
@@ -1472,6 +1484,8 @@ class ProcessNode {
     }
 }
 
+/* Node for copying arbitrary files during the build phase.
+ */
 class CopyNode {
     construct new(project, name, src, dst) {
         if (project == null) {
@@ -1548,6 +1562,8 @@ class CopyNode {
 
 // TODO: RemoveNode (for clean)
 
+/* Node for embedding arbitrary files into C programs or creating Wren modules.
+ */
 class HeaderNode {
     construct new(project, name, mode, src, dst) {
         if (project == null) {
@@ -1849,6 +1865,8 @@ class HeaderNode {
     }
 }
 
+/* Node for creating "unity builds", possibly transforming individual files.
+ */
 class AmalgamationNode {
     construct new(project, name) {
         if (project == null) {
