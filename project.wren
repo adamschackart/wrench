@@ -144,7 +144,7 @@ var patchWrenAmalgamation = Fn.new { |filename, data|
             "    {",
             "      #if _MSC_VER",
             "        hash = _rotl(hash, 7) + string->value[i];",
-            "      #elif __GNUC__",
+            "      #elif __GNUC__ && defined(__has_builtin) && __has_builtin(__builtin_rotateleft32)",
             "        hash = __builtin_rotateleft32(hash, 7) + string->value[i];",
             "      #else",
             "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
@@ -214,6 +214,7 @@ var removeWrenIncludes = Fn.new { |filename, data|
 class Project {
     /*
      * TODO: Export to cmake, premake, make, Visual Studio project files, etc.
+     * TODO: Only rebuild sources if files are modified (cache modified time).
      */
     construct new(project, name) {
         _project = _project
@@ -258,6 +259,7 @@ class Project {
         _enableExceptions = _project != null ? _project.enableExceptions : false
         _isGUI = _project != null ? _project.isGUI : false
         _linkTimeOptimization = _project != null ? _project.linkTime_linkTimeOptimization : true
+        _stripDebugSymbols = _project != null ? _project.stripDebugSymbols : true
         _finalizeCompilerCommandLine = _project != null ? _project.finalizeCompilerCommandLine : null
         _finalizeLinkerCommandLine = _project != null ? _project.finalizeLinkerCommandLine : null
 
@@ -376,6 +378,9 @@ class Project {
 
     linkTimeOptimization { _linkTimeOptimization }
     linkTimeOptimization=(value) { _linkTimeOptimization = value }
+
+    stripDebugSymbols { _stripDebugSymbols }
+    stripDebugSymbols=(value) { _stripDebugSymbols = value }
 
     isGUI { _isGUI }
     isGUI=(value) { _isGUI = value }
@@ -557,6 +562,7 @@ class ForeignNode {
         _enableExceptions = _project.enableExceptions
         _isGUI = _project.isGUI
         _linkTimeOptimization = _project.linkTimeOptimization
+        _stripDebugSymbols = _project.stripDebugSymbols
         _finalizeCompilerCommandLine = _project.finalizeCompilerCommandLine
         _finalizeLinkerCommandLine = _project.finalizeLinkerCommandLine
 
@@ -718,6 +724,9 @@ class ForeignNode {
     linkTimeOptimization { _linkTimeOptimization }
     linkTimeOptimization=(value) { _linkTimeOptimization = value }
 
+    stripDebugSymbols { _stripDebugSymbols }
+    stripDebugSymbols=(value) { _stripDebugSymbols = value }
+
     isGUI { _isGUI }
     isGUI=(value) { _isGUI = value }
 
@@ -789,6 +798,10 @@ class ForeignNode {
 
         if (Process.run(commandLine) != 0) {
             Fiber.abort("%(project).%(this) failed to link!")
+        }
+
+        if (release && stripDebugSymbols) {
+            stripDebugSymbols_()
         }
     }
 
@@ -1074,7 +1087,7 @@ class ForeignNode {
             data = finalizeCompilerCommandLine.call(filename, data)
 
             if (!(data is String)) {
-                Fiber.abort("finalizeCompilerCommandLine must return a string!")
+                Fiber.abort("%(this).finalizeCompilerCommandLine must return a string!")
             }
         }
 
@@ -1298,11 +1311,44 @@ class ForeignNode {
             data = finalizeLinkerCommandLine.call(data)
 
             if (!(data is String)) {
-                Fiber.abort("finalizeLinkerCommandLine must return a string!")
+                Fiber.abort("%(this).finalizeLinkerCommandLine must return a string!")
             }
         }
 
         return data
+    }
+
+    stripDebugSymbols_() {
+        var command = null
+
+        if (false && Platform.isWindows) {
+            /*
+             * NOTE: Windows executables don't contain symbols (they use PDBs).
+             */
+        } else if (Platform.isMacOSX) {
+            if (false && isSharedLibrary) {
+                /*
+                 * "symbols referenced by indirect symbol table entries that can't be stripped".
+                 */
+                command = "strip %(name).so"
+            } else if (isExecutable) {
+                command = "strip %(name)"
+            }
+        } else {
+            if (isSharedLibrary) {
+                command = "strip -s %(name).so"
+            } else if (isExecutable) {
+                command = "strip -s %(name)"
+            }
+        }
+
+        if (command != null) {
+            if (verbose) {
+                System.print(command)
+            }
+
+            Process.run(command)
+        }
     }
 }
 
@@ -1435,6 +1481,8 @@ class ProcessNode {
         _finishBuildCommand = null
         _finishCleanCommand = null
 
+        _finalizeCommand = null
+
         _project.nodes.add(this)
     }
 
@@ -1464,35 +1512,58 @@ class ProcessNode {
     finishCleanCommand { _finishCleanCommand }
     finishCleanCommand=(value) { _finishCleanCommand = value }
 
+    finalizeCommand { _finalizeCommand }
+    finalizeCommand=(value) { _finalizeCommand = value }
+
     build() {
-        if (buildCommand == null || buildCommand == "") {
+        var command = buildCommand
+
+        if (finalizeCommand != null) {
+            command = finalizeCommand.call("build", command)
+
+            if (!(command is String || command == null)) {
+                Fiber.abort("%(this).finalizeCommand must return a string!")
+            }
+        }
+
+        if (command == null || command == "") {
             return
         }
 
         if (verbose) {
-            System.print("running " + (async ? "async" : "blocking") + " build command \"%(buildCommand)\"")
+            System.print("running " + (async ? "async" : "blocking") + " build command \"%(command)\"")
         }
 
         if (async) {
-            _buildProcess = Process.create(buildCommand)
+            _buildProcess = Process.create(command)
         } else {
-            Process.run(buildCommand)
+            Process.run(command)
         }
     }
 
     clean() {
-        if (cleanCommand == null || cleanCommand == "") {
+        var command = cleanCommand
+
+        if (finalizeCommand != null) {
+            command = finalizeCommand.call("clean", command)
+
+            if (!(command is String || command == null)) {
+                Fiber.abort("%(this).finalizeCommand must return a string!")
+            }
+        }
+
+        if (command == null || command == "") {
             return
         }
 
         if (verbose) {
-            System.print("running " + (async ? "async" : "blocking") + " clean command \"%(cleanCommand)\"")
+            System.print("running " + (async ? "async" : "blocking") + " clean command \"%(command)\"")
         }
 
         if (async) {
-            _cleanProcess = Process.create(cleanCommand)
+            _cleanProcess = Process.create(command)
         } else {
-            Process.run(cleanCommand)
+            Process.run(command)
         }
     }
 
@@ -1510,12 +1581,22 @@ class ProcessNode {
                 }
             }
 
-            if (finishBuildCommand != null && finishBuildCommand != "") {
+            var finish_command = finishBuildCommand
+
+            if (finalizeCommand != null) {
+                finish_command = finalizeCommand.call("finish_build", finish_command)
+
+                if (!(command is String || command == null)) {
+                    Fiber.abort("%(this).finalizeCommand must return a string!")
+                }
+            }
+
+            if (finish_command != null && finish_command != "") {
                 if (verbose) {
-                    System.print("running build completion command \"%(finishBuildCommand)\"")
+                    System.print("running build completion command \"%(finish_command)\"")
                 }
 
-                Process.run(finishBuildCommand)
+                Process.run(finish_command)
             }
         } else if (command == "clean") {
             if (_cleanProcess != null) {
@@ -1530,12 +1611,22 @@ class ProcessNode {
                 }
             }
 
-            if (finishCleanCommand != null && finishCleanCommand != "") {
+            var finish_command = finishCleanCommand
+
+            if (finalizeCommand != null) {
+                finish_command = finalizeCommand.call("finish_clean", finish_command)
+
+                if (!(command is String || command == null)) {
+                    Fiber.abort("%(this).finalizeCommand must return a string!")
+                }
+            }
+
+            if (finish_command != null && finish_command != "") {
                 if (verbose) {
-                    System.print("running clean completion command \"%(finishCleanCommand)\"")
+                    System.print("running clean completion command \"%(finish_command)\"")
                 }
 
-                Process.run(finishCleanCommand)
+                Process.run(finish_command)
             }
         } else {
             Fiber.abort(command)
@@ -2083,7 +2174,10 @@ var main = Fn.new {
     var mode
 
     var previousEnsureCRLF = File.ensureCRLF
-    File.ensureCRLF = true
+
+    if (false) {
+        File.ensureCRLF = true
+    }
 
     if (WrenVM.self.commandLine.count < 3) {
         command = "build"
