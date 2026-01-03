@@ -12,6 +12,12 @@
 - Multiple userdata slots for quick user library handle retrieval.
 - Optional standard library modules for file I/O, directory enumeration, images, metaprogramming, etc.
 
+# Getting Started
+
+Linux/MacOS users can type `sh build.sh` to bootstrap, then `./run_wren project build debug builtin-stdlib` to patch in a few additional features.
+Windows users must use a developer terminal session to run the command at the top of `build.sh`, or run the experimental `build.bat`.
+If git is not installed, external dependencies must be copied into the `wrench` directory.
+
 # TODO
 
 - Documentation system.

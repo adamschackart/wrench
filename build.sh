@@ -46,7 +46,7 @@ else
 fi
 
 # TODO: Optional command-line argument to enable unity build / stdlib inclusion.
-BUILTIN_STDLIB=false
+BUILTIN_STDLIB=true
 
 if "$BUILTIN_STDLIB"; then
     $COMPILER $COMPILER_FLAGS -DWRENCH_STDLIB=1 -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -o run_wren wrench_main.c wren.c -lm -ldl

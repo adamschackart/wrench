@@ -615,7 +615,9 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 
                     "while (true) {\n"
                         "var s = readStdout(1024 * 16)\n"
-
+                        /*
+                         * NOTE: Faster than String.isEmpty.
+                         */
                         "if (s.byteCount_ > 0) {\n"
                             "b.add(s)\n"
                         "} else {\n"
@@ -672,7 +674,9 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
 
                     "while (true) {\n"
                         "var s = readStderr(1024 * 16)\n"
-
+                        /*
+                         * NOTE: Faster than String.isEmpty.
+                         */
                         "if (s.byteCount_ > 0) {\n"
                             "b.add(s)\n"
                         "} else {\n"

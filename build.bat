@@ -30,7 +30,7 @@ if not exist "zip\" (
 :: set COMPILER_FLAGS=/Ot /Ox /DNDEBUG
 set COMPILER_FLAGS=/Od /Zi /DEBUG
 
-set BUILTIN_STDLIB=false
+set BUILTIN_STDLIB=true
 
 if "%BUILTIN_STDLIB%"=="true" (
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /DWRENCH_STDLIB=1 /Fe:run_wren.exe wrench_main.c wren.c
