@@ -45,3 +45,4 @@
 - sdl wrapper.
 - opengl wrapper.
 - openal wrapper.
+- libffi wrapper.

@@ -1,7 +1,11 @@
 /* -----------------------------------------------------------------------------
 --- Copyright (c) 2012-2026 Adam Schackart / "AJ Hackman", all rights reserved.
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
+--------------------------------------------------------------------------------
+--- TODO: If RAM <= 4GB, disable async compilation and pass -no-integrated-cpp.
+--- Could possibly pass -fno-inline as well (but that affects code generation).
 ----------------------------------------------------------------------------- */
+import "config" for Config
 import "file" for File, Path
 import "platform" for Platform
 import "process" for Process
@@ -14,193 +18,222 @@ import "vm" for WrenVM
 --------------------------------------------------------------------------------
 */
 
-/* Enables us to safely embed code (or any other type of text) within a string.
- * XXX: This should go in StringUtil, but we've got enough escape chars here...
+/* NOTE: We need to wrap these up in a class, or calls in methods can't find them.
  */
-var escapeString = Fn.new { |s|
-    return s.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-}
-
-/* Modifies wren.c with performance improvements and some extra functionality.
- */
-var patchWrenAmalgamation = Fn.new { |filename, data|
-    if (filename == "wren/src/vm/wren_core.c") {
-        if (false) {
-            data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
-        }
-
-        var index
-        var lines = File.readLines("wren/src/vm/wren_core.wren")
-
-        /* Sequence.find, thanks to Michael Hermier. Don't call inside Wrench,
-         * as we must be able to rely on vanilla Wren to bootstrap the build.
-         * If we really need it for whatever reason, create SequenceUtil.find.
-         *
-         * "Returns an iterator on the sequence that pass the function `predicate`,
-         * starting from the begining of the sequence or `it` if provided.
-         *
-         * It is a runtime error if `it` is not a valid iterator value on the sequence."
-         */
-        index = lines.indexOf("  isEmpty { iterate(null) ? false : true }")
-
-        if (index < 0) {
-            Fiber.abort("failed to patch wren core for Sequence.find")
-        } else {
-            [
-                "  find(predicate) { find(iterate(null), predicate) }",
-                "",
-                "  find(it, predicate) {",
-                "    while(it) {",
-                "      if (predicate.call(iteratorValue(it))) break",
-                "      it = iterate(it)",
-                "    }",
-                "    return it",
-                "}",
-                "",
-            ][-1..0].each { |line| lines.insert(index, line) }
-        }
-
-        /* Faster Sequence.where (removes redundant call to iteratorValue), thanks to Thorben Krüger.
-         */
-        index = lines.indexOf("class WhereSequence is Sequence {")
-
-        if (index < 0) {
-            Fiber.abort("failed to patch wren core for faster Sequence.where")
-        } else {
-            [
-                "    _cache_val = null",
-                "    _cache_iter = null"
-            ][-1..0].each { |line| lines.insert(index + 4, line) }
-
-            lines[index + 10] = "      var val = _sequence.iteratorValue(iterator)"
-
-            [
-                "      if (_fn.call(val)) {",
-                "        _cache_val = val",
-                "        _cache_iter = iterator",
-                "        break",
-                "      }",
-            ][-1..0].each { |line| lines.insert(index + 11, line) }
-
-            lines[index + 20] = "  iteratorValue(iterator) {"
-
-            [
-                "    if (iterator == _cache_iter) return _cache_val else return _sequence.iteratorValue(iterator)",
-                "  }",
-            ][-1..0].each { |line| lines.insert(index + 21, line) }
-        }
-
-        /* Headerize core module source.
-         */
-        data = data.replace("#include \"wren_core.wren.inc\"",
-
-        "static const char* coreModuleSource =\n" +
-        lines.map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
-        ";")
-    } else if (filename == "wren/src/vm/wren_value.c") {
-        if (false) {
-            data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
-        }
-
-        /* Lazy + faster string hashing.
-         */
-        data = data.replace([
-            "// Calculates and stores the hash code for [string].",
-            "static void hashString(ObjString* string)",
-            "{",
-            "  // FNV-1a hash. See: http://www.isthe.com/chongo/tech/comp/fnv/",
-            "  uint32_t hash = 2166136261u;",
-            "",
-            "  // This is O(n) on the length of the string, but we only call this when a new",
-            "  // string is created. Since the creation is also O(n) (to copy/initialize all",
-            "  // the bytes), we allow this here.",
-            "  for (uint32_t i = 0; i < string->length; i++)",
-            "  {",
-            "    hash ^= string->value[i];",
-            "    hash *= 16777619;",
-            "  }",
-            "",
-            "  string->hash = hash;",
-            "}"].join("\n"),
-
-            "static void hashString(ObjString* string)\n{\n  string->hash = 0;\n}")
-
-        data = data.replace("aString->hash == bString->hash", "true")
-
-        data = data.replace("      return ((ObjString*)object)->hash;",
-        [
-            "{",
-            "  ObjString* string = (ObjString*)object;",
-            "",
-            "  if (string->hash == 0)",
-            "  {",
-            "    uint32_t hash = 0;",
-            "",
-            "    for (uint32_t i = 0; i < string->length; i++)",
-            "    {",
-            "      #if _MSC_VER",
-            "        hash = _rotl(hash, 7) + string->value[i];",
-            "      #elif __GNUC__ && defined(__has_builtin) && __has_builtin(__builtin_rotateleft32)",
-            "        hash = __builtin_rotateleft32(hash, 7) + string->value[i];",
-            "      #else",
-            "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
-            "      #endif",
-            "    }",
-            "",
-            "    // Final mixing step.",
-            "    hash += hash >> 16;",
-            "",
-            "    string->hash = hash;",
-            "  }",
-            "",
-            "  return string->hash;",
-            "}",
-        ].map { |line| "  " * 2 + line }.join("\n"))
-
-        /* Better hash combination.
-         */
-        data = data.replace("// Generates a hash code for [object].",
-        [
-            "static inline uint32_t hashTwoNumbers(double a, double b)",
-            "{",
-            "  uint32_t lhs = hashNumber(a);",
-            "  uint32_t rhs = hashNumber(b);",
-            "",
-            "  lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);",
-            "  return lhs;",
-            "}",
-            "",
-            "// Generates a hash code for [object].",
-        ].join("\n"))
-
-        data = data.replace("hashNumber(fn->arity) ^ hashNumber(fn->code.count)", "hashTwoNumbers(fn->arity, fn->code.count)")
-        data = data.replace("hashNumber(range->from) ^ hashNumber(range->to)", "hashTwoNumbers(range->from, range->to)")
+class Util {
+    /*
+     * Enables us to safely embed code (or any other type of text) within a string.
+     * XXX: This should go in StringUtil, but we've got enough escape chars here...
+     */
+    static escapeString(s) {
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
     }
 
-    return data
-}
+    /* Modifies wren.c with performance improvements and some extra functionality.
+     */
+    static patchWrenAmalgamation(filename, data) {
+        if (filename == "wren/src/vm/wren_core.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
 
-/* Remove #include "foo.h" statements from wren.c, and insert opcodes + builtin stdlib modules.
- */
-var removeWrenIncludes = Fn.new { |filename, data|
-    data = data.replace("#include \"wren_opcodes.h\"", File.read("wren/src/vm/wren_opcodes.h"))
+            var index
+            var lines = File.readLines("wren/src/vm/wren_core.wren")
 
-    data = data.replace("#include \"wren_opt_meta.wren.inc\"",
-        "const char* metaModuleSource =\n" +
-        File.readLines("wren/src/optional/wren_opt_meta.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
-        ";")
+            /* List aliases for those more familiar with Python.
+             */
+            index = lines.indexOf("class List is Sequence {")
 
-    data = data.replace("#include \"wren_opt_random.wren.inc\"",
-        "const char* randomModuleSource =\n" +
-        File.readLines("wren/src/optional/wren_opt_random.wren").map { |line| "\"" + escapeString.call(line) + "\\n\"" }.join("\n") +
-        ";")
+            if (index < 0) {
+                Fiber.abort("failed to patch wren core for List.append and List.extend")
+            } else {
+                [
+                    "  append(item) { add(item) }",
+                    "  extend(list) { addAll(list) }",
+                    "",
+                ][-1..0].each { |line| lines.insert(index + 1, line) }
+            }
 
-    data = data.replace("#include \"", "//#include \"")
-    return data
+            /* Sequence.find, thanks to Michael Hermier. Don't call inside Wrench,
+             * as we must be able to rely on vanilla Wren to bootstrap the build.
+             * If we really need it for whatever reason, create SequenceUtil.find.
+             *
+             * "Returns an iterator on the sequence that pass the function `predicate`,
+             * starting from the begining of the sequence or `it` if provided.
+             *
+             * It is a runtime error if `it` is not a valid iterator value on the sequence."
+             */
+            index = lines.indexOf("  isEmpty { iterate(null) ? false : true }")
+
+            if (index < 0) {
+                Fiber.abort("failed to patch wren core for Sequence.find")
+            } else {
+                [
+                    "  find(predicate) { find(iterate(null), predicate) }",
+                    "",
+                    "  find(it, predicate) {",
+                    "    while(it) {",
+                    "      if (predicate.call(iteratorValue(it))) break",
+                    "      it = iterate(it)",
+                    "    }",
+                    "    return it",
+                    "}",
+                    "",
+                ][-1..0].each { |line| lines.insert(index, line) }
+            }
+
+            /* Faster Sequence.where (removes redundant call to iteratorValue), thanks to Thorben Krüger.
+             */
+            index = lines.indexOf("class WhereSequence is Sequence {")
+
+            if (index < 0) {
+                Fiber.abort("failed to patch wren core for faster Sequence.where")
+            } else {
+                [
+                    "    _cache_val = null",
+                    "    _cache_iter = null"
+                ][-1..0].each { |line| lines.insert(index + 4, line) }
+
+                lines[index + 10] = "      var val = _sequence.iteratorValue(iterator)"
+
+                [
+                    "      if (_fn.call(val)) {",
+                    "        _cache_val = val",
+                    "        _cache_iter = iterator",
+                    "        break",
+                    "      }",
+                ][-1..0].each { |line| lines.insert(index + 11, line) }
+
+                lines[index + 20] = "  iteratorValue(iterator) {"
+
+                [
+                    "    if (iterator == _cache_iter) return _cache_val else return _sequence.iteratorValue(iterator)",
+                    "  }",
+                ][-1..0].each { |line| lines.insert(index + 21, line) }
+            }
+
+            /* Headerize core module source.
+             */
+            data = data.replace("#include \"wren_core.wren.inc\"",
+
+            "static const char* coreModuleSource =\n" +
+            lines.map { |line| "\"" + Util.escapeString(line) + "\\n\"" }.join("\n") +
+            ";")
+        } else if (filename == "wren/src/vm/wren_value.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Lazy + faster string hashing.
+             */
+            data = data.replace([
+                "// Calculates and stores the hash code for [string].",
+                "static void hashString(ObjString* string)",
+                "{",
+                "  // FNV-1a hash. See: http://www.isthe.com/chongo/tech/comp/fnv/",
+                "  uint32_t hash = 2166136261u;",
+                "",
+                "  // This is O(n) on the length of the string, but we only call this when a new",
+                "  // string is created. Since the creation is also O(n) (to copy/initialize all",
+                "  // the bytes), we allow this here.",
+                "  for (uint32_t i = 0; i < string->length; i++)",
+                "  {",
+                "    hash ^= string->value[i];",
+                "    hash *= 16777619;",
+                "  }",
+                "",
+                "  string->hash = hash;",
+                "}"].join("\n"),
+
+                "static void hashString(ObjString* string)\n{\n  string->hash = 0;\n}")
+
+            data = data.replace("aString->hash == bString->hash", "true")
+
+            data = data.replace("      return ((ObjString*)object)->hash;",
+            [
+                "{",
+                "  ObjString* string = (ObjString*)object;",
+                "",
+                "  if (string->hash == 0)",
+                "  {",
+                "    uint32_t hash = 0;",
+                "",
+                "    for (uint32_t i = 0; i < string->length; i++)",
+                "    {",
+                "      #if __TINYC__",
+                "      {",
+                "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
+                "      }",
+                "      #elif _MSC_VER",
+                "      {",
+                "        hash = _rotl(hash, 7) + string->value[i];",
+                "      }",
+                "      #elif __GNUC__ && defined(__has_builtin) && __has_builtin(__builtin_rotateleft32)",
+                "      {",
+                "        hash = __builtin_rotateleft32(hash, 7) + string->value[i];",
+                "      }",
+                "      #else",
+                "      {",
+                "        hash = ((hash << 7) | (hash >> (32 - 7))) + string->value[i];",
+                "      }",
+                "      #endif",
+                "    }",
+                "",
+                "    // Final mixing step.",
+                "    hash += hash >> 16;",
+                "",
+                "    string->hash = hash;",
+                "  }",
+                "",
+                "  return string->hash;",
+                "}",
+            ].map { |line| "  " * 2 + line }.join("\n"))
+
+            /* Better hash combination.
+             */
+            data = data.replace("// Generates a hash code for [object].",
+            [
+                "static inline uint32_t hashTwoNumbers(double a, double b)",
+                "{",
+                "  uint32_t lhs = hashNumber(a);",
+                "  uint32_t rhs = hashNumber(b);",
+                "",
+                "  lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);",
+                "  return lhs;",
+                "}",
+                "",
+                "// Generates a hash code for [object].",
+            ].join("\n"))
+
+            data = data.replace("hashNumber(fn->arity) ^ hashNumber(fn->code.count)", "hashTwoNumbers(fn->arity, fn->code.count)")
+            data = data.replace("hashNumber(range->from) ^ hashNumber(range->to)", "hashTwoNumbers(range->from, range->to)")
+        }
+
+        return data
+    }
+
+    /* Remove #include "foo.h" statements from wren.c, and insert opcodes + builtin stdlib modules.
+     */
+    static removeWrenIncludes(data) {
+        data = data.replace("#include \"wren_opcodes.h\"", File.read("wren/src/vm/wren_opcodes.h"))
+
+        data = data.replace("#include \"wren_opt_meta.wren.inc\"",
+            "const char* metaModuleSource =\n" +
+            File.readLines("wren/src/optional/wren_opt_meta.wren").map { |line| "\"" + Util.escapeString(line) + "\\n\"" }.join("\n") +
+            ";")
+
+        data = data.replace("#include \"wren_opt_random.wren.inc\"",
+            "const char* randomModuleSource =\n" +
+            File.readLines("wren/src/optional/wren_opt_random.wren").map { |line| "\"" + Util.escapeString(line) + "\\n\"" }.join("\n") +
+            ";")
+
+        data = data.replace("#include \"", "//#include \"")
+        return data
+    }
 }
 
 /*
@@ -254,19 +287,25 @@ class Project {
         _extraLinkerFlags = _project != null ? _project.extraLinkerFlags.toList : []
         _extraObjects = _project != null ? _project.extraObjects.toList : []
         _libraries = _project != null ? _project.libraries.toList : []
-        _async = _project != null ? _project.async : true
+        _async = _project != null ? _project.async : false
         _enableRTTI = _project != null ? _project.enableRTTI : false
-        _enableExceptions = _project != null ? _project.enableExceptions : false
+        _enableExceptions = _project != null ? _project.enableExceptions : true
         _isGUI = _project != null ? _project.isGUI : false
-        _linkTimeOptimization = _project != null ? _project.linkTime_linkTimeOptimization : true
+        _dynamicCRT = _project != null ? _project.dynamicCRT : false // Bloat code to avoid DLL hell.
+        _linkTimeOptimization = _project != null ? _project.linkTimeOptimization : true
         _stripDebugSymbols = _project != null ? _project.stripDebugSymbols : true
         _finalizeCompilerCommandLine = _project != null ? _project.finalizeCompilerCommandLine : null
         _finalizeLinkerCommandLine = _project != null ? _project.finalizeLinkerCommandLine : null
-
-        /* TODO: Platform.logicalCoreCount * 2
-         */
-        _maxAsyncCompileJobs = _project != null ? _project.maxAsyncCompileJobs : 16
+        _warningLevel = _project != null ? _project.warningLevel : 0
         _optimizeForCodeSize = _project != null ? _project.optimizeForCodeSize : true
+
+        _maxAsyncCompileJobs = _project != null ? _project.maxAsyncCompileJobs : (Platform.logicalCoreCount * 2)
+
+        if (_maxAsyncCompileJobs < 1) {
+            _maxAsyncCompileJobs = 1
+        }
+
+        _extraCleanFiles = []
 
         if (_project != null) {
             _project.nodes.add(this)
@@ -305,6 +344,9 @@ class Project {
     verbose { _verbose }
     verbose=(value) { _verbose = value }
 
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
+
     defines { _defines }
     defines=(value) { _defines = value }
 
@@ -332,10 +374,9 @@ class Project {
     // TODO: linkerScript (ld -T)
     // TODO: libraryPaths
     // TODO: runtimeLibraryPaths
-    // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
+    // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
-    // TODO: extraWarnings (-Wall, -Wextra, -Wpedantic, etc)
-    // TODO: extraCleanFiles
+
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
@@ -343,6 +384,9 @@ class Project {
     // TODO: threadSanitizer
     // TODO: undefinedBehaviorSanitizer
     // TODO: integerSanitizer
+
+    warningLevel { _warningLevel }
+    warningLevel=(value) { _warningLevel = value }
 
     optimizeForCodeSize { _optimizeForCodeSize }
     optimizeForCodeSize=(value) { _optimizeForCodeSize = value }
@@ -353,11 +397,17 @@ class Project {
     extraObjects { _extraObjects }
     extraObjects=(value) { _extraObjects = value }
 
+    extraCleanFiles { _extraCleanFiles }
+    extraCleanFiles=(value) { _extraCleanFiles = value }
+
     libraries { _libraries }
     libraries=(value) { _libraries = value }
 
     async { _async }
     async=(value) { _async = value }
+
+    blocking { !_async }
+    blocking=(value) { _async = !value }
 
     maxAsyncCompileJobs { _maxAsyncCompileJobs }
     maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
@@ -388,13 +438,49 @@ class Project {
     isCLI { !isGUI }
     isCLI=(value) { isGUI = !value }
 
+    dynamicCRT { _dynamicCRT }
+    dynamicCRT=(value) { _dynamicCRT = value }
+
+    staticCRT { !dynamicCRT }
+    staticCRT=(value) { dynamicCRT = !value }
+
     finalizeCompilerCommandLine { _finalizeCompilerCommandLine }
     finalizeCompilerCommandLine=(value) { _finalizeCompilerCommandLine = value }
 
     finalizeLinkerCommandLine { _finalizeLinkerCommandLine }
     finalizeLinkerCommandLine=(value) { _finalizeLinkerCommandLine = value }
 
-    // TODO: configure(cfg) - get config.Config values for compiler, linker, async, other flags.
+    configure(config) {
+        var storeFallbacks = config.storeFallbacks
+        config.storeFallbacks = false
+
+        compiler = config.getStr("compiler", compiler)
+        linker = config.getStr("linker", linker)
+        warningLevel = config.getNum("warning-level", warningLevel)
+
+        // TODO: link-time-optimization
+        // TODO: strip-debug-symbols
+
+        // TODO: debug/release
+        // TODO: verbose/quiet
+        // TODO: optimize-for-code-size/optimize-for-performance
+        // TODO: async/blocking
+        // TODO: enable-rtti/disable-rtti
+        // TODO: enable-exceptions/disable-exceptions
+        // TODO: is-gui/is-cli
+        // TODO: dynamic-crt/static-crt
+
+        // TODO: sources=A,B,C
+        // TODO: include-paths=A,B,C
+        // TODO: defines=A,B,C
+        // TODO: undefs=A,B,C
+        // TODO: extra-compiler-flags=A,B,C
+        // TODO: extra-linker-flags=A,B,C
+        // TODO: extra-objects=A,B,C
+        // TODO: libraries=A,B,C
+
+        config.storeFallbacks = storeFallbacks
+    }
 
     build() {
         /*
@@ -435,6 +521,10 @@ class Project {
             node.finish("clean")
         }
 
+        for (filename in extraCleanFiles) {
+            Path.tryRemove(filename)
+        }
+
         /*if (verbose) {
             System.print("%(this).clean done in %(System.clock - start_time) seconds.")
         }*/
@@ -445,6 +535,7 @@ class Project {
     ensureVisualStudioCompilerSetup_() {
         /*
          * Find/run vcvarsall so we don't have to use Developer Command Prompt on Win32.
+         * This will also enable us to do 32-bit builds, and cross-compile for ARM etc.
          */
         if (__msvcIsInit == true) {
             return
@@ -529,9 +620,10 @@ class Project {
 /* Node for executables, static or shared libraries, object files, etc.
  * Anything that requires a compiler, a linker, and/or an assembler.
  */
-class ForeignNode {
+class NativeNode {
     /*
      * TODO: Node base class to avoid some of this repetitive boilerplate.
+     * TODO: Export/import JSON, so we can farm projects out to processes.
      */
     construct new(project, name, mode) {
         if (project == null) {
@@ -561,10 +653,13 @@ class ForeignNode {
         _enableRTTI = _project.enableRTTI
         _enableExceptions = _project.enableExceptions
         _isGUI = _project.isGUI
+        _dynamicCRT = _project.dynamicCRT
         _linkTimeOptimization = _project.linkTimeOptimization
         _stripDebugSymbols = _project.stripDebugSymbols
         _finalizeCompilerCommandLine = _project.finalizeCompilerCommandLine
         _finalizeLinkerCommandLine = _project.finalizeLinkerCommandLine
+        _warningLevel = _project.warningLevel
+        _extraCleanFiles = []
 
         _project.nodes.add(this)
     }
@@ -650,6 +745,9 @@ class ForeignNode {
     verbose { _verbose }
     verbose=(value) { _verbose = value }
 
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
+
     defines { _defines }
     defines=(value) { _defines = value }
 
@@ -677,10 +775,9 @@ class ForeignNode {
     // TODO: linkerScript (ld -T)
     // TODO: libraryPaths
     // TODO: runtimeLibraryPaths
-    // TODO: noStandardLibrary (use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
+    // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
-    // TODO: extraWarnings (-Wall, -Wextra, -Wpedantic, etc)
-    // TODO: extraCleanFiles
+
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
@@ -688,6 +785,9 @@ class ForeignNode {
     // TODO: threadSanitizer
     // TODO: undefinedBehaviorSanitizer
     // TODO: integerSanitizer
+
+    warningLevel { _warningLevel }
+    warningLevel=(value) { _warningLevel = value }
 
     optimizeForCodeSize { _optimizeForCodeSize }
     optimizeForCodeSize=(value) { _optimizeForCodeSize = value }
@@ -698,11 +798,17 @@ class ForeignNode {
     extraObjects { _extraObjects }
     extraObjects=(value) { _extraObjects = value }
 
+    extraCleanFiles { _extraCleanFiles }
+    extraCleanFiles=(value) { _extraCleanFiles = value }
+
     libraries { _libraries }
     libraries=(value) { _libraries = value }
 
     async { _async }
     async=(value) { _async = value }
+
+    blocking { !_async }
+    blocking=(value) { _async = !value }
 
     maxAsyncCompileJobs { _maxAsyncCompileJobs }
     maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
@@ -732,6 +838,12 @@ class ForeignNode {
 
     isCLI { !isGUI }
     isCLI=(value) { isGUI = !value }
+
+    dynamicCRT { _dynamicCRT }
+    dynamicCRT=(value) { _dynamicCRT = value }
+
+    staticCRT { !dynamicCRT }
+    staticCRT=(value) { dynamicCRT = !value }
 
     finalizeCompilerCommandLine { _finalizeCompilerCommandLine }
     finalizeCompilerCommandLine=(value) { _finalizeCompilerCommandLine = value }
@@ -776,7 +888,10 @@ class ForeignNode {
                     flushJobs.call()
                 }
             } else {
-                if (Process.run(commandLine) != 0) {
+                /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+                 * on Linux (must test other systems). run also disables terminal colors.
+                 */
+                if (Process.system(commandLine) != 0) {
                     Fiber.abort("%(project).%(this) failed to compile \"%(source)\"!")
                 }
             }
@@ -796,7 +911,10 @@ class ForeignNode {
             System.print(commandLine)
         }
 
-        if (Process.run(commandLine) != 0) {
+        /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+         * on Linux (must test other systems). run also disables terminal colors.
+         */
+        if (Process.system(commandLine) != 0) {
             Fiber.abort("%(project).%(this) failed to link!")
         }
 
@@ -843,6 +961,10 @@ class ForeignNode {
         if (Platform.isWindows) {
             Path.tryRemove(name + ".exp")
         }
+
+        for (filename in extraCleanFiles) {
+            Path.tryRemove(filename)
+        }
     }
 
     finish(command) {
@@ -854,10 +976,25 @@ class ForeignNode {
     compilerName_(filename) {
         var compilerName = compiler
 
-        /* Call into the Visual Studio macro assembler instead.
-         */
-        if (compilerName == "cl" && filename.endsWith(".S")) {
-            compilerName = "ml"
+        if (compilerName == "cl") {
+            /*
+             * Call into the Visual Studio macro assembler instead.
+             */
+            if (filename.endsWith(".S")) {
+                compilerName = "ml"
+            }
+        } else if (compilerName == "cc") {
+            if (filename.endsWith(".cpp")) {
+                compilerName = "c++"
+            }
+        } else if (compilerName == "gcc") {
+            if (filename.endsWith(".cpp")) {
+                compilerName = "g++"
+            }
+        } else if (compilerName == "clang") {
+            if (filename.endsWith(".cpp")) {
+                compilerName = "clang++"
+            }
         }
 
         return compilerName + " "
@@ -926,7 +1063,16 @@ class ForeignNode {
                 s.add("-DDEBUG=1")
             } else {
                 if (optimizeForCodeSize) {
-                    s.add("-Os")
+                    /*
+                     * TODO: Profile difference.
+                     */
+                    if (true) {
+                        s.add("-Os")
+                    } else if (true) {
+                        s.add("-Oi")
+                    } else {
+                        s.add("-Oz")
+                    }
                 } else {
                     s.add("-O3")
                 }
@@ -990,6 +1136,87 @@ class ForeignNode {
         }
     }
 
+    compilerWarningFlags_ {
+        var s = []
+
+        if (compiler == "cl") {
+            if (warningLevel < 0) {
+                s.add("/w")
+            } else if (warningLevel >= 4) {
+                s.add("/Wall")
+            } else if (warningLevel >= 3) {
+                s.add("/W4")
+            } else if (warningLevel >= 2) {
+                s.add("/W3")
+            } else if (warningLevel >= 1) {
+                s.add("/W2")
+            } else {
+                s.add("/W1")
+            }
+
+            if (true && warningLevel >= 3) {
+                s.add("/wd4100") // unreferenced parameter
+                s.add("/wd4127") // conditional expression is constant
+                s.add("/wd4200") // nonstandard extension used
+            }
+        } else {
+            if (warningLevel < 0) {
+                s.add("-w")
+            } else {
+                /*
+                 * TODO: silenceUnimportantErrors (or something to that effect).
+                 */
+                if (true) {
+                    s.add("-Wno-constant-logical-operand")
+                    s.add("-Wno-format-truncation")
+                    s.add("-Wno-format-zero-length")
+                    s.add("-Wno-gnu-inline-cpp-without-extern")
+                    s.add("-Wno-ignored-attributes")
+                    s.add("-Wno-inconsistent-missing-override")
+                    s.add("-Wno-tautological-pointer-compare")
+                }
+
+                if (warningLevel >= 1) {
+                    s.add("-Wall")
+
+                    if (warningLevel >= 2) {
+                        s.add("-Wextra")
+
+                        if (true) {
+                            s.add("-Wno-unused-function")
+                            s.add("-Wno-unused-parameter")
+                        }
+
+                        if (warningLevel >= 3) {
+                            s.add("-Wpedantic")
+
+                            if (true) {
+                                s.add("-Wno-gnu-label-as-value")
+                                s.add("-Wno-format-pedantic")
+                                s.add("-Wno-overlength-strings")
+                                s.add("-Wno-strict-prototypes")
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* TODO: terminateOnFirstError (can't do this on MSVC).
+             */
+            if (true) {
+                s.add("-Wfatal-errors")
+            }
+        }
+
+        // TODO: warningsAsErrors
+
+        if (s.isEmpty) {
+            return ""
+        } else {
+            return s.join(" ") + " "
+        }
+    }
+
     compilerPlatformFlags_ {
         /*
          * Only build object files, don't link.
@@ -1026,8 +1253,27 @@ class ForeignNode {
             } else {
                 // Implicitly disabled.
             }
+
+            if (dynamicCRT) {
+                if (debug) {
+                    s.add("/MDd")
+                } else {
+                    s.add("/MD")
+                }
+            } else {
+                if (debug) {
+                    s.add("/MTd")
+                } else {
+                    s.add("/MT")
+                }
+            }
         } else {
-            s.add("-fPIC")
+            if (isExecutable) {
+                s.add("-fPIE")
+            } else {
+                s.add("-fPIC")
+            }
+
             s.add("-c")
 
             // For very large builds.
@@ -1044,6 +1290,10 @@ class ForeignNode {
             } else {
                 s.add("-fno-exceptions")
             }
+
+            /*if (staticCRT) {
+                Fiber.abort("TODO")
+            }*/
         }
 
         if (s.isEmpty) {
@@ -1077,6 +1327,7 @@ class ForeignNode {
                     compilerOptimization_ +
                     compilerDefines_ +
                     compilerUndefines_ +
+                    compilerWarningFlags_ +
                     compilerPlatformFlags_ +
                     compilerExtraFlags_ +
                     filename +
@@ -1109,6 +1360,21 @@ class ForeignNode {
                 linkerName = /*"gcc-" +*/ "ar rcs"
             }
         }
+        /* TODO: Test this with C++ code.
+
+        else if (linkerName == "cc") {
+            if (_cppHasBeenCompiled) {
+                linkerName = "c++"
+            }
+        } else if (linkerName == "gcc") {
+            if (_cppHasBeenCompiled) {
+                linkerName = "g++"
+            }
+        } else if (linkerName == "clang") {
+            if (_cppHasBeenCompiled) {
+                linkerName = "clang++"
+            }
+        }*/
 
         return linkerName + " "
     }
@@ -1288,13 +1554,22 @@ class ForeignNode {
     }
 
     linkerLibraryPaths_ {
-        /*
-         * TODO: libraryPaths with ["."] as the default.
+        var s = []
+
+        /* TODO: libraryPaths with ["."] as the default.
          */
-        if (isStaticLibrary || linker == "link") {
+        if (!(isStaticLibrary || linker == "link")) {
+            s.add("-L.")
+
+            if (linker != "tcc") {
+                s.add("-rpath '$ORIGIN'")
+            }
+        }
+
+        if (s.isEmpty) {
             return ""
         } else {
-            return " -L."
+            return " " + s.join(" ")
         }
     }
 
@@ -1321,7 +1596,7 @@ class ForeignNode {
     stripDebugSymbols_() {
         var command = null
 
-        if (false && Platform.isWindows) {
+        if (Platform.isWindows) {
             /*
              * NOTE: Windows executables don't contain symbols (they use PDBs).
              */
@@ -1347,7 +1622,10 @@ class ForeignNode {
                 System.print(command)
             }
 
-            Process.run(command)
+            /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+             * on Linux (must test other systems). run also disables terminal colors.
+             */
+            Process.system(command)
         }
     }
 }
@@ -1497,8 +1775,14 @@ class ProcessNode {
     verbose { _verbose }
     verbose=(value) { _verbose = value }
 
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
+
     async { _async }
     async=(value) { _async = value }
+
+    blocking { !_async }
+    blocking=(value) { _async = !value }
 
     buildCommand { _buildCommand }
     buildCommand=(value) { _buildCommand = value }
@@ -1537,7 +1821,10 @@ class ProcessNode {
         if (async) {
             _buildProcess = Process.create(command)
         } else {
-            Process.run(command)
+            /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+             * on Linux (must test other systems). run also disables terminal colors.
+             */
+            Process.system(command)
         }
     }
 
@@ -1563,7 +1850,10 @@ class ProcessNode {
         if (async) {
             _cleanProcess = Process.create(command)
         } else {
-            Process.run(command)
+            /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+             * on Linux (must test other systems). run also disables terminal colors.
+             */
+            Process.system(command)
         }
     }
 
@@ -1596,7 +1886,10 @@ class ProcessNode {
                     System.print("running build completion command \"%(finish_command)\"")
                 }
 
-                Process.run(finish_command)
+                /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+                 * on Linux (must test other systems). run also disables terminal colors.
+                 */
+                Process.system(finish_command)
             }
         } else if (command == "clean") {
             if (_cleanProcess != null) {
@@ -1626,7 +1919,10 @@ class ProcessNode {
                     System.print("running clean completion command \"%(finish_command)\"")
                 }
 
-                Process.run(finish_command)
+                /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+                 * on Linux (must test other systems). run also disables terminal colors.
+                 */
+                Process.system(finish_command)
             }
         } else {
             Fiber.abort(command)
@@ -1666,6 +1962,9 @@ class CopyNode {
 
     verbose { _verbose }
     verbose=(value) { _verbose = value }
+
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
 
     src { _src }
     src=(value) { _src = value }
@@ -1753,6 +2052,9 @@ class HeaderNode {
 
     verbose { _verbose }
     verbose=(value) { _verbose = value }
+
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
 
     mode { _mode }
     mode=(value) { _mode = value }
@@ -1888,7 +2190,7 @@ class HeaderNode {
                 }
 
                 var indentation = (line.count - line.trimStart().count) + extraIndentation
-                line = escapeString.call(line.trim())
+                line = Util.escapeString(line.trim())
 
                 if (line == "") {
                     dst_file.write("\n")
@@ -1920,7 +2222,7 @@ class HeaderNode {
                     break
                 }
 
-                line = escapeString.call(line.trimEnd())
+                line = Util.escapeString(line.trimEnd())
 
                 dst_file.write("\"")
                 dst_file.write(line)
@@ -2055,6 +2357,9 @@ class AmalgamationNode {
     verbose { _verbose }
     verbose=(value) { _verbose = value }
 
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
+
     sources { _sources }
     sources=(value) { _sources = value }
 
@@ -2170,6 +2475,9 @@ class AmalgamationNode {
 */
 
 var main = Fn.new {
+    /*
+     * TODO: Remove mode and just use config.
+     */
     var command
     var mode
 
@@ -2179,21 +2487,28 @@ var main = Fn.new {
         File.ensureCRLF = true
     }
 
+    var firstArg = 2
+
     if (WrenVM.self.commandLine.count < 3) {
         command = "build"
     } else {
         command = StringUtil.toLower(WrenVM.self.commandLine[2])
+        firstArg = 3
     }
 
     if (WrenVM.self.commandLine.count < 4) {
         mode = "debug"
     } else {
         mode = StringUtil.toLower(WrenVM.self.commandLine[3])
+        firstArg = 4
     }
 
     var project = Project.new(null, "wrench")
+    project.configure(Config.new().parseArgs(WrenVM.self.commandLine[firstArg..-1]))
 
-    if (false) {
+    var unity = WrenVM.self.commandLine.any { |arg| arg.trimStart("-") == "builtin-stdlib" }
+
+    if (unity) {
         var headers = Project.new(null, "headers")
 
         HeaderNode.new(headers, "config", "module", "config.wren", "wrench_config.c")
@@ -2245,10 +2560,10 @@ var main = Fn.new {
         }
 
         amalgamator.extraProcessing = Fn.new { |filename, data|
-            data = patchWrenAmalgamation.call(filename, data)
+            data = Util.patchWrenAmalgamation(filename, data)
 
             if (include_headers) {
-                data = removeWrenIncludes.call(filename, data)
+                data = Util.removeWrenIncludes(data)
             }
 
             return data
@@ -2265,6 +2580,9 @@ var main = Fn.new {
 
     if (mode == "debug") {
         project.debug = true
+    } else if (mode == "profile") {
+        project.release = true
+        project.finalizeCompilerCommandLine = Fn.new { |filename, data| data.replace("NDEBUG", "DEBUG") }
     } else if (mode == "release") {
         project.debug = false
     } else if (mode == "size") {
@@ -2283,11 +2601,6 @@ var main = Fn.new {
     project.includePaths.add("wren/src/optional")
     project.includePaths.add("wren/src/vm")
 
-    if (project.compiler != "cl") {
-        project.extraCompilerFlags.add("-Wno-format-truncation")
-        project.extraCompilerFlags.add("-Wno-format-zero-length")
-    }
-
     if (!Platform.isWindows) {
         project.libraries.add("m")
         project.libraries.add("dl")
@@ -2300,7 +2613,7 @@ var main = Fn.new {
         project.define("WREN_OPT_RANDOM", 0)
     }
 
-    var wren = ForeignNode.new(project, "wren", "static_library")
+    var wren = NativeNode.new(project, "wren", "static_library")
 
     if (Path.isFile("wren.c")) {
         wren.sources.add("wren.c")
@@ -2322,53 +2635,53 @@ var main = Fn.new {
 
     project.libraries.add("wren")
 
-    var run_wren = ForeignNode.new(project, "run_wren", "exe")
+    var run_wren = NativeNode.new(project, "run_wren", "exe")
     run_wren.sources.add("wrench_main.c")
 
-    if (false) {
+    if (unity) {
         run_wren.define("WRENCH_STDLIB")
     } else {
         var node
 
-        node = ForeignNode.new(project, "file", "shared_library")
+        node = NativeNode.new(project, "file", "shared_library")
         node.sources.add("wrench_file.c")
 
-        node = ForeignNode.new(project, "image", "shared_library")
+        node = NativeNode.new(project, "image", "shared_library")
         node.sources.add("wrench_image.c")
 
-        node = ForeignNode.new(project, "platform", "shared_library")
+        node = NativeNode.new(project, "platform", "shared_library")
         node.sources.add("wrench_platform.c")
 
-        node = ForeignNode.new(project, "process", "shared_library")
+        node = NativeNode.new(project, "process", "shared_library")
         node.sources.add("wrench_process.c")
 
-        node = ForeignNode.new(project, "rect", "shared_library")
+        node = NativeNode.new(project, "rect", "shared_library")
         node.sources.add("wrench_rect.c")
 
-        node = ForeignNode.new(project, "util", "shared_library")
+        node = NativeNode.new(project, "util", "shared_library")
         node.sources.add("wrench_util.c")
 
-        node = ForeignNode.new(project, "vector", "shared_library")
+        node = NativeNode.new(project, "vector", "shared_library")
         node.sources.add("wrench_vector.c")
 
-        node = ForeignNode.new(project, "vm", "shared_library")
+        node = NativeNode.new(project, "vm", "shared_library")
         node.sources.add("wrench_vm.c")
 
-        node = ForeignNode.new(project, "zip", "shared_library")
+        node = NativeNode.new(project, "zip", "shared_library")
         node.sources.add("wrench_zip.c")
 
         if (Path.isFile("wrench_config.c")) {
-            node = ForeignNode.new(project, "config", "shared_library")
+            node = NativeNode.new(project, "config", "shared_library")
             node.sources.add("wrench_config.c")
         }
 
         if (Path.isFile("wrench_project.c")) {
-            node = ForeignNode.new(project, "project", "shared_library")
+            node = NativeNode.new(project, "project", "shared_library")
             node.sources.add("wrench_project.c")
         }
 
         if (false) {
-            node = ForeignNode.new(project, "tcc", "shared_library")
+            node = NativeNode.new(project, "tcc", "shared_library")
             node.sources.add("wrench_tcc.c")
             node.libraries.add("tcc")
         }

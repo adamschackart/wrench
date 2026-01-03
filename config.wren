@@ -71,6 +71,8 @@ class Config {
     [key] { get(key) }
     [key]=(value) { set(key, value) }
 
+    has(key) { _table.containsKey(key) }
+
     /* TODO: Rather than calling toString here, ensure all values are strings in set().
      * For further perf, we could have each key in a string, number, and boolean table.
      */

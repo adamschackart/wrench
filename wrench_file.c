@@ -80,6 +80,10 @@ static bool file_Path_exists_impl(const char* path)
     return file_Path_isDirectory_impl(path) || file_Path_isFile_impl(path);
 }
 
+#if _WIN32
+    extern int _mkdir(const char *dirname);
+#endif
+
 static bool file_Path_createDirectory_impl(const char* path) // mkdir
 {
     #if _WIN32
@@ -366,7 +370,7 @@ static size_t file_File_bytesRemaining_impl(FILE* file)
 
     if (!file_File_position_impl(file, &origin, &ending))
     {
-        wrench_assert(0, "TODO actual error handling here");
+        return SIZE_MAX;
     }
 
     return (size_t)(ending - origin);
@@ -379,7 +383,7 @@ static size_t file_File_bytesTotal_impl(FILE* file)
 
     if (!file_File_position_impl(file, &origin, &ending))
     {
-        wrench_assert(0, "TODO actual error handling here");
+        return SIZE_MAX;
     }
 
     return (size_t)ending;
@@ -640,7 +644,13 @@ static void file_File_read(WrenVM* vm)
     const size_t bytes_requested = (size_t)wrenGetSlotInt(vm, 1);
     const size_t bytes_remaining = file_File_bytesRemaining_impl(self->file);
 
-    wrench_assert(bytes_remaining != SIZE_MAX, "");
+    if (bytes_remaining == SIZE_MAX)
+    {
+        wrenSetSlotString(vm, 0, "Failed to get file bytes remaining for read.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
 
     // Avoid over-allocating in case huge values are passed.
     size_t bytes_to_read;
@@ -715,7 +725,19 @@ static void file_File_bytesRemaining_get(WrenVM* vm)
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
-    wrenSetSlotInt(vm, 0, (int)file_File_bytesRemaining_impl(self->file));
+    size_t value = file_File_bytesRemaining_impl(self->file);
+
+    if (value == SIZE_MAX)
+    {
+        /* TODO: Keep/copy the name and mode of the file.
+         */
+        wrenSetSlotString(vm, 0, "failed to get file bytes remaining");
+        wrenAbortFiber(vm, 0);
+    }
+    else
+    {
+        wrenSetSlotInt(vm, 0, (int)value);
+    }
 }
 
 static void file_File_bytesTotal_get(WrenVM* vm)
@@ -723,7 +745,19 @@ static void file_File_bytesTotal_get(WrenVM* vm)
     file_File* self = (file_File*)wrenGetSlotForeign(vm, 0);
     WRENCH_CHECK_MAGIC_TAG(self, file, File);
 
-    wrenSetSlotInt(vm, 0, (int)file_File_bytesTotal_impl(self->file));
+    size_t value = file_File_bytesTotal_impl(self->file);
+
+    if (value == SIZE_MAX)
+    {
+        /* TODO: Keep/copy the name and mode of the file.
+         */
+        wrenSetSlotString(vm, 0, "failed to get file total bytes");
+        wrenAbortFiber(vm, 0);
+    }
+    else
+    {
+        wrenSetSlotInt(vm, 0, (int)value);
+    }
 }
 
 static void file_File_flush(WrenVM* vm)
@@ -752,7 +786,14 @@ static void file_File_readLine(WrenVM* vm)
     /* Over-allocate.
      */
     const size_t bytes_remaining = file_File_bytesRemaining_impl(self->file);
-    wrench_assert(bytes_remaining != SIZE_MAX, "");
+
+    if (bytes_remaining == SIZE_MAX)
+    {
+        wrenSetSlotString(vm, 0, "Failed to get file bytes remaining for readLine.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
 
     char* data = (char*)wrenStackMalloc(vm, bytes_remaining);
 

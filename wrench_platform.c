@@ -24,6 +24,65 @@ static void platform_Platform_is64bit(WrenVM* vm)
     wrenSetSlotBool(vm, 0, sizeof(void*) == 8);
 }
 
+static int wrench_cpu_logical_core_count = 0;
+
+static void platform_Platform_logicalCoreCount(WrenVM* vm)
+{
+    if (wrench_cpu_logical_core_count == 0)
+    {
+        #if _WIN32
+        {
+            SYSTEM_INFO winSystemInfo;
+
+            GetSystemInfo(&winSystemInfo);
+            wrench_cpu_logical_core_count = winSystemInfo.dwNumberOfProcessors;
+        }
+        #else
+        {
+            wrench_cpu_logical_core_count = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        }
+        #endif
+    }
+
+    wrenSetSlotInt(vm, 0, wrench_cpu_logical_core_count);
+}
+
+static int wrench_total_ram_in_mb = 0;
+
+static void platform_Platform_totalRAM(WrenVM* vm)
+{
+    if (wrench_total_ram_in_mb == 0)
+    {
+        #if _WIN32
+        {
+            MEMORYSTATUSEX winMemoryStatus;
+            winMemoryStatus.dwLength = sizeof(winMemoryStatus);
+
+            if (GlobalMemoryStatusEx(&winMemoryStatus))
+            {
+                wrench_total_ram_in_mb = (int)(winMemoryStatus.ullTotalPhys / (1024 * 1024));
+            }
+        }
+        #else
+        {
+            wrench_total_ram_in_mb = (int)((int64_t)sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE) / (1024 * 1024));
+        }
+        #endif
+    }
+
+    wrenSetSlotInt(vm, 0, wrench_total_ram_in_mb);
+}
+
+static void platform_Platform_cacheLineSize(WrenVM* vm)
+{
+    WRENCH_STUB(); wrenSetSlotInt(vm, 0, 0);
+}
+
+static void platform_Platform_pageSize(WrenVM* vm)
+{
+    WRENCH_STUB(); wrenSetSlotInt(vm, 0, 0);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -515,6 +574,27 @@ WRENCH_EXPORT bool platformWrenInit(WrenVM* vm)
             }
             #endif
 
+            // ===== [ runtime info ] ==========================================
+
+            WREN_METHOD(platform, Platform, true, logicalCoreCount, "", "");
+            WREN_METHOD(platform, Platform, true, totalRAM, "", "");
+            WREN_METHOD(platform, Platform, true, cacheLineSize, "", "");
+            WREN_METHOD(platform, Platform, true, pageSize, "", "");
+
+            if (!wrenCode(vm,
+
+            "static usableRAM {\n"
+                "var v = totalRAM\n"
+
+                "if (is32bit && v > 4096) {\n"
+                    "v = 4096\n"
+                "}\n"
+
+                "return v\n"
+            "}\n"
+
+            )) { return false; }
+
             // ===== [ emulation ] =============================================
 
             // TODO: isWine
@@ -525,6 +605,61 @@ WRENCH_EXPORT bool platformWrenInit(WrenVM* vm)
             }
         }
         WREN_END_CLASS();
+
+        if (!wrenCode(vm,
+
+        "var main = Fn.new {\n"
+            #if WRENCH_DEBUG
+                "System.print(\"Wren " WREN_VERSION_STRING " (debug build)\")\n"
+            #else
+                "System.print(\"Wren " WREN_VERSION_STRING " (release build)\")\n"
+            #endif
+
+            "if (Platform.is32bit) System.print(\"32-bit\")\n"
+            "if (Platform.is64bit) System.print(\"64-bit\")\n"
+            "if (Platform.isAndroid) System.print(\"Android\")\n"
+            "if (Platform.isBeOS) System.print(\"BeOS\")\n"
+            "if (Platform.isBSD) System.print(\"BSD\")\n"
+            "if (Platform.isCygwin) System.print(\"Cygwin\")\n"
+            "if (Platform.isLinux) System.print(\"Linux\")\n"
+            "if (Platform.isMacOS9) System.print(\"Mac OS9\")\n"
+            "if (Platform.isMacOSX) System.print(\"Mac OSX\")\n"
+            "if (Platform.isMSDOS) System.print(\"MS-DOS\")\n"
+            "if (Platform.isOS2) System.print(\"OS2\")\n"
+            "if (Platform.isUnix) System.print(\"Unix\")\n"
+            "if (Platform.isWindows) System.print(\"Windows\")\n"
+            "if (Platform.isWindowsCE) System.print(\"Windows CE\")\n"
+            "if (Platform.isAlpha) System.print(\"Alpha\")\n"
+            "if (Platform.isX86_64) System.print(\"AMD64\")\n"
+            "if (Platform.isARM32) System.print(\"ARM32\")\n"
+            "if (Platform.isARM_Thumb) System.print(\"ARM Thumb\")\n"
+            "if (Platform.isARM64) System.print(\"ARM64\")\n"
+            "if (Platform.isARM_NEON) System.print(\"ARM NEON\")\n"
+            "if (Platform.isBlackfin) System.print(\"Blackfin\")\n"
+            "if (Platform.isConvex) System.print(\"Convex\")\n"
+            "if (Platform.isEpiphany) System.print(\"Epiphany\")\n"
+            "if (Platform.isHPPA) System.print(\"HPPA\")\n"
+            "if (Platform.isX86_32) System.print(\"x86\")\n"
+            "if (Platform.isItanium) System.print(\"Itanium\")\n"
+            "if (Platform.is68k) System.print(\"68k\")\n"
+            "if (Platform.isMIPS) System.print(\"MIPS\")\n"
+            "if (Platform.isPowerPC) System.print(\"PowerPC\")\n"
+            "if (Platform.isPyramid) System.print(\"Pyramid\")\n"
+            "if (Platform.isRiscV) System.print(\"Risc-V\")\n"
+            "if (Platform.isRS6000) System.print(\"RS6000\")\n"
+            "if (Platform.isSparc) System.print(\"Sparc\")\n"
+            "if (Platform.isSuperH) System.print(\"SuperH\")\n"
+            "if (Platform.isSystemZ) System.print(\"SystemZ\")\n"
+            "if (Platform.isTMS320) System.print(\"TMS320\")\n"
+            "if (Platform.isTMS470) System.print(\"TMS470\")\n"
+            "System.print(\"%(Platform.logicalCoreCount) logical cores\")\n"
+            "System.print(\"%(Platform.totalRAM / 1024) GB of total RAM\")\n"
+            "System.print(\"%(Platform.usableRAM / 1024) GB of usable RAM\")\n"
+            //"System.print(\"%(Platform.cacheLineSize)-byte cache lines\")\n"
+            //"System.print(\"%(Platform.pageSize / 1024) KB pages\")\n"
+        "}\n"
+
+        )) { return false; }
     }
 
     if (!platformWrenInitEx(vm))

@@ -118,8 +118,8 @@ static void rect_DblRect_index1_get(WrenVM* vm)
 
 static void rect_DblRect_index1_set(WrenVM* vm)
 {
-    rect_FltRect* self = (rect_FltRect*)wrenGetSlotForeign(vm, 0);
-    WRENCH_CHECK_MAGIC_TAG(self, rect, FltRect);
+    rect_DblRect* self = (rect_DblRect*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, rect, DblRect);
 
     const int index = wrenGetSlotInt(vm, 1);
     wrench_assert(index >= 0 && index < 4, "%i", index);

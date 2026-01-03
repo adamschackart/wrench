@@ -383,12 +383,14 @@ while (0)
     #define _WRENCH_MAGIC_TAG
     #endif
 
+    /* Silence compiler warnings about unused variables.
+     */
     #ifndef WRENCH_CHECK_MAGIC_TAG
-    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) ((void)0)
+    #define WRENCH_CHECK_MAGIC_TAG(data, module_name, class_name) ((void)sizeof(data))
     #endif
 
     #ifndef WRENCH_SET_MAGIC_TAG
-    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((void)0)
+    #define WRENCH_SET_MAGIC_TAG(data, module_name, class_name) ((void)sizeof(data))
     #endif
 #endif /* WRENCH_DEBUG */
 
@@ -726,7 +728,11 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
  */
 #if !defined(wrench_stderr)
     #if _MSC_VER
-        #define wrench_stderr (__acrt_iob_func(2))
+        #if 1
+            #define wrench_stderr (__acrt_iob_func(2))
+        #else
+            #define wrench_stderr (&__iob_func()[2])
+        #endif
     #elif __APPLE__
         #define wrench_stderr __stderrp
     #else
@@ -735,7 +741,11 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #if !defined(wrench_stdin)
     #if _MSC_VER
-        #define wrench_stdin (__acrt_iob_func(0))
+        #if 1
+            #define wrench_stdin (__acrt_iob_func(0))
+        #else
+            #define wrench_stdin (&__iob_func()[0])
+        #endif
     #elif __APPLE__
         #define wrench_stdin __stdinp
     #else
@@ -744,7 +754,11 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #if !defined(wrench_stdout)
     #if _MSC_VER
-        #define wrench_stdout (__acrt_iob_func(1))
+        #if 1
+            #define wrench_stdout (__acrt_iob_func(1))
+        #else
+            #define wrench_stdout (&__iob_func()[1])
+        #endif
     #elif __APPLE__
         #define wrench_stdout __stdoutp
     #else
@@ -2042,7 +2056,7 @@ static bool wrenchCodeEx(WrenchContext* context, const char* source, size_t num_
     wrench_assert(context->module_builder_base != NULL, "");
     wrench_assert(context->module_being_built != NULL, "");
 
-    char* data = context->source_code_alloc_mark;
+//  char* data = context->source_code_alloc_mark;
     char* next = context->source_code_alloc_mark + num_chars;
 
     if (next > context->source_code_alloc_end)
@@ -3749,6 +3763,10 @@ WRENCH_IMPL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value))
     wrenSetSlotInt(vm, slot, (int)value);
 }
 
+#ifndef stderr
+#define stderr wrench_stderr
+#endif
+
 //#include <wren/src/vm/wren_common.h>
 //#include <wren/src/vm/wren_compiler.h>
 //#include <wren/src/vm/wren_core.h>
@@ -3758,6 +3776,10 @@ WRENCH_IMPL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value))
 //#include <wren/src/vm/wren_utils.h>
 #include <wren/src/vm/wren_value.h>
 #include <wren/src/vm/wren_vm.h>
+
+#ifdef stderr
+#undef stderr
+#endif
 
 /* XXX: This reaches into both VM and object internals, but it's the only way I can see to do this
  * without trying something like `wrenGetVariable` on `Map.iteratorValue`, or something yet uglier.
@@ -3865,7 +3887,8 @@ WRENCH_IMPL(const char*, DefaultResolveModule, (WrenVM* vm, const char* importer
 
 WRENCH_IMPL(WrenLoadModuleResult, DefaultLoadModule, (WrenVM* vm, const char* name))
 {
-    WrenLoadModuleResult result = {};
+    WrenLoadModuleResult result;
+    wrench_memset(&result, 0, sizeof(WrenLoadModuleResult));
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
@@ -3994,7 +4017,8 @@ WRENCH_IMPL(WrenForeignMethodFn, DefaultBindForeignMethod, (WrenVM* vm, const ch
 
 WRENCH_IMPL(WrenForeignClassMethods, DefaultBindForeignClass, (WrenVM* vm, const char* moduleName, const char* className))
 {
-    WrenForeignClassMethods methods = {};
+    WrenForeignClassMethods methods;
+    wrench_memset(&methods, 0, sizeof(WrenForeignClassMethods));
 
     if (wrench_strcmp(moduleName, "meta") == 0 || wrench_strcmp(moduleName, "random") == 0)
     {
@@ -4053,11 +4077,17 @@ WRENCH_IMPL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 
 int WRENCH_MAIN(int argc, char** argv)
 {
-    if (argc < 2)
-    {
-        wrench_fprintf(wrench_stderr, "Usage: %s main_wren_filename\n", argv[0]);
-        return EXIT_SUCCESS;
-    }
+    #if defined(WRENCH_SCRIPT)
+        const char* script = WRENCH_SCRIPT;
+    #else
+        if (argc < 2)
+        {
+            wrench_fprintf(wrench_stderr, "Usage: %s main_wren_filename\n", argv[0]);
+            return EXIT_SUCCESS;
+        }
+
+        const char* script = argv[1];
+    #endif
 
     WrenVM* vm = wrenNewExtendedVM(argc, argv, true);
 
@@ -4076,9 +4106,9 @@ int WRENCH_MAIN(int argc, char** argv)
 
     // TODO: Option to eval a Wren string, similar to Python's -c command-line arg.
 
-    if (wrench_strstr(argv[1], ".wren") != NULL)
+    if (wrench_strstr(script, ".wren") != NULL)
     {
-        const char* code = wrenLoadSourceFile(vm, argv[1], NULL);
+        const char* code = wrenLoadSourceFile(vm, script, NULL);
 
         if (code != NULL)
         {
@@ -4086,16 +4116,22 @@ int WRENCH_MAIN(int argc, char** argv)
         }
         else
         {
-            wrench_fprintf(wrench_stderr, "RUNTIME ERROR: Could not load source file '%s'.\n", argv[1]);
+            wrench_fprintf(wrench_stderr, "RUNTIME ERROR: Could not load source file '%s'.\n", script);
             result = WREN_RESULT_RUNTIME_ERROR;
         }
     }
     else
     {
         char code[1024]; // Import for native code modules or scripts.
-        wrench_snprintf(code, sizeof(code), "import \"%s\"", argv[1]);
+        wrench_snprintf(code, sizeof(code), "import \"%s\"", script);
 
         result = wrenInterpret(vm, "main", (const char*)code);
+
+        if (result == WREN_RESULT_SUCCESS && wrenHasVariable(vm, script, "main"))
+        {
+            wrench_snprintf(code, sizeof(code), "import \"%s\" for main", script);
+            result = wrenInterpret(vm, "main", (const char*)code);
+        }
     }
 
     switch (result)

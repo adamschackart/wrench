@@ -405,6 +405,9 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
             WREN_GETTER(vector, IntVector, false, dimensions);
             WREN_INDEX_PROPERTY(vector, IntVector, false, 1);
 
+            // For compatibility with Sequence.
+            WREN_CODE("count { dimensions }");
+
             if (!wrenCode(vm,
 
             "construct new(dimensions) {}\n"
@@ -513,6 +516,9 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
 
             WREN_GETTER(vector, FltVector, false, dimensions);
             WREN_INDEX_PROPERTY(vector, FltVector, false, 1);
+
+            // For compatibility with Sequence.
+            WREN_CODE("count { dimensions }");
 
             if (!wrenCode(vm,
 
@@ -818,6 +824,9 @@ WRENCH_EXPORT bool vectorWrenInit(WrenVM* vm)
 
             WREN_GETTER(vector, DblVector, false, dimensions);
             WREN_INDEX_PROPERTY(vector, DblVector, false, 1);
+
+            // For compatibility with Sequence.
+            WREN_CODE("count { dimensions }");
 
             if (!wrenCode(vm,
 

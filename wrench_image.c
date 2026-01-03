@@ -103,7 +103,9 @@ static void image_Image_load(WrenVM* vm)
     const int desired_color_channels = wrenGetSlotInt(vm, 2);
     const int desired_bytes_per_channel = wrenGetSlotInt(vm, 3);
 
-    image_Image result = {};
+    image_Image result; // Clear all image members.
+    wrench_memset(&result, 0, sizeof(image_Image));
+
     char error[1024 * 4];
 
     switch (desired_bytes_per_channel)
@@ -174,7 +176,9 @@ static void image_Image_loadFromBytes(WrenVM* vm)
     const int desired_color_channels = wrenGetSlotInt(vm, 2);
     const int desired_bytes_per_channel = wrenGetSlotInt(vm, 3);
 
-    image_Image result = {};
+    image_Image result; // Clear all image members.
+    wrench_memset(&result, 0, sizeof(image_Image));
+
     char error[1024 * 4];
 
     // HACK
@@ -225,10 +229,10 @@ static void image_Image_loadFromBytes(WrenVM* vm)
 
     if (result.pixels != NULL)
     {
-        image_Image* data = (image_Image*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(image_Image));
-        *data = result;
+        image_Image* self = (image_Image*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(image_Image));
+        *self = result;
 
-        WRENCH_SET_MAGIC_TAG(data, image, Image);
+        WRENCH_SET_MAGIC_TAG(self, image, Image);
     }
     else
     {
@@ -887,11 +891,11 @@ static void image_Image_clipIntRect(int* src, int* dst, int w, int h)
     {
         /* Convert to axis-aligned bounding box and clamp, then back.
          */
-        const float x_min = wrench_int_clamp(src[0], 0, w);
-        const float y_min = wrench_int_clamp(src[1], 0, h);
+        const int x_min = wrench_int_clamp(src[0], 0, w);
+        const int y_min = wrench_int_clamp(src[1], 0, h);
 
-        const float x_max = wrench_int_clamp(src[0] + src[2], 0, w);
-        const float y_max = wrench_int_clamp(src[1] + src[3], 0, h);
+        const int x_max = wrench_int_clamp(src[0] + src[2], 0, w);
+        const int y_max = wrench_int_clamp(src[1] + src[3], 0, h);
 
         dst[0] = x_min;
         dst[1] = y_min;

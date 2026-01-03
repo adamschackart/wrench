@@ -130,7 +130,7 @@ static void util_StringUtil_toUpper(WrenVM* vm)
 
     for (size_t i = 0; i < length; i++)
     {
-        p[i] = wrench_toupper(s[i]);
+        p[i] = (char)wrench_toupper(s[i]);
     }
 
     p[length] = '\0';
@@ -156,7 +156,7 @@ static void util_StringUtil_toLower(WrenVM* vm)
 
     for (size_t i = 0; i < length; i++)
     {
-        p[i] = wrench_tolower(s[i]);
+        p[i] = (char)wrench_tolower(s[i]);
     }
 
     p[length] = '\0';

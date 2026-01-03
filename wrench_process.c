@@ -388,7 +388,12 @@ static void process_Process_readStdout(WrenVM* vm)
     /* TODO: Read in chunks into a resizable array, so we can request huge values to read all bytes.
      */
     const unsigned int requested_size = (unsigned int)wrenGetSlotInt(vm, 1);
-    char* buffer = (char*)wrench_malloc(requested_size);
+    char* buffer = (char*)wrenStackMalloc(vm, requested_size);
+
+    if (buffer == NULL)
+    {
+        buffer = (char*)wrench_malloc(requested_size);
+    }
 
     if (buffer == NULL)
     {
@@ -399,8 +404,16 @@ static void process_Process_readStdout(WrenVM* vm)
     }
 
     unsigned int actual_size = subprocess_read_stdout(&self->process, buffer, requested_size);
-    wrenSetSlotBytes(vm, 0, buffer, (size_t)requested_size);
-    wrench_free(buffer);
+    wrenSetSlotBytes(vm, 0, buffer, (size_t)actual_size);
+
+    if (wrenIsStackMemory(vm, buffer))
+    {
+        wrenStackFree(vm, buffer, requested_size);
+    }
+    else
+    {
+        wrench_free(buffer);
+    }
 }
 
 static void process_Process_readStderrByte(WrenVM* vm)
@@ -430,7 +443,12 @@ static void process_Process_readStderr(WrenVM* vm)
     /* TODO: Read in chunks into a resizable array, so we can request huge values to read all bytes.
      */
     const unsigned int requested_size = (unsigned int)wrenGetSlotInt(vm, 1);
-    char* buffer = (char*)wrench_malloc(requested_size);
+    char* buffer = (char*)wrenStackMalloc(vm, requested_size);
+
+    if (buffer == NULL)
+    {
+        buffer = (char*)wrench_malloc(requested_size);
+    }
 
     if (buffer == NULL)
     {
@@ -441,8 +459,16 @@ static void process_Process_readStderr(WrenVM* vm)
     }
 
     unsigned int actual_size = subprocess_read_stderr(&self->process, buffer, requested_size);
-    wrenSetSlotBytes(vm, 0, buffer, (size_t)requested_size);
-    wrench_free(buffer);
+    wrenSetSlotBytes(vm, 0, buffer, (size_t)actual_size);
+
+    if (wrenIsStackMemory(vm, buffer))
+    {
+        wrenStackFree(vm, buffer, requested_size);
+    }
+    else
+    {
+        wrench_free(buffer);
+    }
 }
 
 static void process_Process_alive(WrenVM* vm)
@@ -550,7 +576,7 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
             WREN_METHOD(process, Process, false, readStdoutByte, "()", "()");
             WREN_METHOD(process, Process, false, readStderrByte, "()", "()");
 
-            if (0)
+            if (1)
             {
                 WREN_METHOD(process, Process, false, readStdout, "(size)", "(_)");
             }
@@ -578,11 +604,36 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
                 "}\n"
 
                 )) { return false; }
+            }
 
+            if (1)
+            {
+                if (!wrenCode(vm,
+
+                "readStdout() {\n"
+                    "var b = []\n"
+
+                    "while (true) {\n"
+                        "var s = readStdout(1024 * 16)\n"
+
+                        "if (s.byteCount_ > 0) {\n"
+                            "b.add(s)\n"
+                        "} else {\n"
+                            "break\n"
+                        "}\n"
+                    "}\n"
+
+                    "return b.join()\n"
+                "}\n"
+
+                )) { return false; }
+            }
+            else
+            {
                 WREN_CODE("readStdout() { readStdout(Num.maxSafeInteger) }");
             }
 
-            if (0)
+            if (1)
             {
                 WREN_METHOD(process, Process, false, readStderr, "(size)", "(_)");
             }
@@ -610,7 +661,32 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
                 "}\n"
 
                 )) { return false; }
+            }
 
+            if (1)
+            {
+                if (!wrenCode(vm,
+
+                "readStderr() {\n"
+                    "var b = []\n"
+
+                    "while (true) {\n"
+                        "var s = readStderr(1024 * 16)\n"
+
+                        "if (s.byteCount_ > 0) {\n"
+                            "b.add(s)\n"
+                        "} else {\n"
+                            "break\n"
+                        "}\n"
+                    "}\n"
+
+                    "return b.join()\n"
+                "}\n"
+
+                )) { return false; }
+            }
+            else
+            {
                 WREN_CODE("readStderr() { readStderr(Num.maxSafeInteger) }");
             }
 
