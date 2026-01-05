@@ -116,6 +116,19 @@ class Util {
                 ][-1..0].each { |line| lines.insert(index + 21, line) }
             }
 
+            /* Faster String.isEmpty.
+             */
+            index = lines.indexOf("class String is Sequence {")
+
+            if (index < 0) {
+                Fiber.abort("failed to patch wren core for faster String.isEmpty")
+            } else {
+                [
+                    "  isEmpty { byteCount_ == 0 }",
+                    "",
+                ][-1..0].each { |line| lines.insert(index + 1, line) }
+            }
+
             /* Headerize core module source.
              */
             data = data.replace("#include \"wren_core.wren.inc\"",
@@ -278,7 +291,7 @@ class Project {
 
         _nodes = _project != null ? _project.nodes.toList : []
         _sources = _project != null ? _project.sources.toList : []
-        _includePaths = _project != null ? _project.includePaths.toList : []
+        _includePaths = _project != null ? _project.includePaths.toList : ["."]
         _debug = _project != null ? _project.debug : WrenVM.debug
         _verbose = _project != null ? _project.verbose : true
         _defines = _project != null ? _project.defines.toList : []
@@ -287,7 +300,7 @@ class Project {
         _extraLinkerFlags = _project != null ? _project.extraLinkerFlags.toList : []
         _extraObjects = _project != null ? _project.extraObjects.toList : []
         _libraries = _project != null ? _project.libraries.toList : []
-        _async = _project != null ? _project.async : false
+        _async = _project != null ? _project.async : false // FIXME: Causes weird issues on MSVC.
         _enableRTTI = _project != null ? _project.enableRTTI : false
         _enableExceptions = _project != null ? _project.enableExceptions : true
         _isGUI = _project != null ? _project.isGUI : false
@@ -410,7 +423,7 @@ class Project {
     blocking=(value) { _async = !value }
 
     maxAsyncCompileJobs { _maxAsyncCompileJobs }
-    maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
+    maxAsyncCompileJobs=(value) { _maxAsyncCompileJobs = value }
 
     /* Enable/disable C++ run-time type information.
      */
@@ -660,6 +673,7 @@ class NativeNode {
         _finalizeLinkerCommandLine = _project.finalizeLinkerCommandLine
         _warningLevel = _project.warningLevel
         _extraCleanFiles = []
+        _haveCompiledCpp = false
 
         _project.nodes.add(this)
     }
@@ -811,7 +825,7 @@ class NativeNode {
     blocking=(value) { _async = !value }
 
     maxAsyncCompileJobs { _maxAsyncCompileJobs }
-    maxAsyncCompileJobs=(value) { maxAsyncCompileJobs = value }
+    maxAsyncCompileJobs=(value) { _maxAsyncCompileJobs = value }
 
     /* Enable/disable C++ run-time type information.
      */
@@ -851,6 +865,9 @@ class NativeNode {
     finalizeLinkerCommandLine { _finalizeLinkerCommandLine }
     finalizeLinkerCommandLine=(value) { _finalizeLinkerCommandLine = value }
 
+    haveCompiledCpp { _haveCompiledCpp }
+    haveCompiledCpp=(value) { _haveCompiledCpp = value }
+
     compile() {
         var jobs = []
 
@@ -881,14 +898,24 @@ class NativeNode {
                 System.print(commandLine)
             }
 
+            if (source.endsWith(".cpp")) {
+                haveCompiledCpp = true
+            }
+
             if (async) {
+                /*
+                 * TODO: Rather than waiting for one file that takes much longer than
+                 * others, scan this list in a round-robin fashion (calling sleep(0)
+                 * between checks) to replace completed build jobs with new processes.
+                 */
                 jobs.add(Process.create(commandLine))
 
                 if (jobs.count == maxAsyncCompileJobs) {
                     flushJobs.call()
                 }
             } else {
-                /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+                /*
+                 * FIXME: Large stdout/stderr buffers hang the calling process, at least
                  * on Linux (must test other systems). run also disables terminal colors.
                  */
                 if (Process.system(commandLine) != 0) {
@@ -1008,7 +1035,11 @@ class NativeNode {
 
         if (compiler == "cl") {
             for (path in includePaths) {
-                s.add("/I%(path) ")
+                if (path.contains(" ")) {
+                    s.add("\"/I%(path)\" ")
+                } else {
+                    s.add("/I%(path) ")
+                }
             }
         } else {
             for (path in includePaths) {
@@ -1296,6 +1327,12 @@ class NativeNode {
             }*/
         }
 
+        /* TODO: if (!noStandardLibrary)
+         */
+        if (!Platform.isWindows) {
+            s.add("-pthread")
+        }
+
         if (s.isEmpty) {
             return ""
         } else {
@@ -1399,6 +1436,12 @@ class NativeNode {
             if (release && linkTimeOptimization && !isStaticLibrary) {
                 s.add("-flto")
             }
+        }
+
+        /* TODO: if (!noStandardLibrary)
+         */
+        if (!Platform.isWindows && !isStaticLibrary) {
+            s.add("-pthread")
         }
 
         if (s.isEmpty) {
@@ -1543,6 +1586,22 @@ class NativeNode {
                 } else {
                     s.add("-l%(library)")
                 }
+            }
+        }
+
+        /* TODO: if (!noStandardLibrary)
+         */
+        if (!Platform.isWindows && !isStaticLibrary) {
+            if (haveCompiledCpp && !libraries.contains("stdc++")) {
+                s.add("-lstdc++")
+            }
+
+            if (!libraries.contains("dl")) {
+                s.add("-ldl")
+            }
+
+            if (!libraries.contains("m")) {
+                s.add("-lm")
             }
         }
 
@@ -1821,7 +1880,8 @@ class ProcessNode {
         if (async) {
             _buildProcess = Process.create(command)
         } else {
-            /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+            /*
+             * FIXME: Large stdout/stderr buffers hang the calling process, at least
              * on Linux (must test other systems). run also disables terminal colors.
              */
             Process.system(command)
@@ -1850,7 +1910,8 @@ class ProcessNode {
         if (async) {
             _cleanProcess = Process.create(command)
         } else {
-            /* FIXME: Large stdout/stderr buffers hang the calling process, at least
+            /*
+             * FIXME: Large stdout/stderr buffers hang the calling process, at least
              * on Linux (must test other systems). run also disables terminal colors.
              */
             Process.system(command)
@@ -2595,16 +2656,9 @@ var main = Fn.new {
         Fiber.abort("Invalid mode \"%(mode)\".")
     }
 
-    project.includePaths.add(".")
     project.includePaths.add("wren/src/include")
-
     project.includePaths.add("wren/src/optional")
     project.includePaths.add("wren/src/vm")
-
-    if (!Platform.isWindows) {
-        project.libraries.add("m")
-        project.libraries.add("dl")
-    }
 
     if (false) {
         project.define("WREN_NAN_TAGGING", 0)
