@@ -562,6 +562,9 @@ WRENCH_DECL(void, SetSlotFloat, (WrenVM* vm, int slot, float value));
 WRENCH_DECL(int, GetSlotInt, (WrenVM* vm, int slot));
 WRENCH_DECL(void, SetSlotInt, (WrenVM* vm, int slot, int value));
 
+WRENCH_DECL(unsigned int, GetSlotUnsignedInt, (WrenVM* vm, int slot));
+WRENCH_DECL(void, SetSlotUnsignedInt, (WrenVM* vm, int slot, unsigned int value));
+
 WRENCH_DECL(uint8_t, GetSlotByte, (WrenVM* vm, int slot));
 WRENCH_DECL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value));
 
@@ -864,6 +867,25 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef WRENCH_NUM_IS_SAFE_INT
 #define WRENCH_NUM_IS_SAFE_INT(x) ((x) > ((double)WRENCH_MIN_SAFE_INT - WRENCH_DBL_EPSILON) \
                                 && (x) < ((double)WRENCH_MAX_SAFE_INT + WRENCH_DBL_EPSILON))
+#endif
+
+#ifndef WRENCH_NUM_TO_UNSIGNED_INT
+#define WRENCH_NUM_TO_UNSIGNED_INT(x) ((unsigned int)wrench_trunc(x))
+#endif
+#ifndef WRENCH_NUM_IS_UNSIGNED_INT
+#define WRENCH_NUM_IS_UNSIGNED_INT(x) (wrench_fabs(WRENCH_NUM_TO_UNSIGNED_INT(x) - (x)) < WRENCH_DBL_EPSILON)
+#endif
+
+#ifndef WRENCH_MIN_SAFE_UNSIGNED_INT
+#define WRENCH_MIN_SAFE_UNSIGNED_INT 0
+#endif
+#ifndef WRENCH_MAX_SAFE_UNSIGNED_INT
+#define WRENCH_MAX_SAFE_UNSIGNED_INT 9007199254740991 // 2 ^ 53 - 1
+#endif
+
+#ifndef WRENCH_NUM_IS_SAFE_UNSIGNED_INT
+#define WRENCH_NUM_IS_SAFE_UNSIGNED_INT(x) ((x) > ((double)WRENCH_MIN_SAFE_UNSIGNED_INT - WRENCH_DBL_EPSILON) && \
+                                            (x) < ((double)WRENCH_MAX_SAFE_UNSIGNED_INT + WRENCH_DBL_EPSILON))
 #endif
 
 #if !defined(wrench_breakpoint)
@@ -3747,6 +3769,25 @@ WRENCH_IMPL(int, GetSlotInt, (WrenVM* vm, int slot))
 WRENCH_IMPL(void, SetSlotInt, (WrenVM* vm, int slot, int value))
 {
     // This will always be within the range of a signed 32-bit int.
+    wrenSetSlotDouble(vm, slot, (double)value);
+}
+
+WRENCH_IMPL(unsigned int, GetSlotUnsignedInt, (WrenVM* vm, int slot))
+{
+    const double value = wrenGetSlotDouble(vm, slot);
+
+    /* TODO: Check for NaN.
+     * TODO: Check for Inf.
+     */
+    wrench_assert(WRENCH_NUM_IS_UNSIGNED_INT(value), "%f is not a whole number", value);
+    wrench_assert(WRENCH_NUM_IS_SAFE_UNSIGNED_INT(value), "%f is out of range", value);
+
+    return WRENCH_NUM_TO_UNSIGNED_INT(value);
+}
+
+WRENCH_IMPL(void, SetSlotUnsignedInt, (WrenVM* vm, int slot, unsigned int value))
+{
+    // Double-precision floats can safely store 2^53 integer bits.
     wrenSetSlotDouble(vm, slot, (double)value);
 }
 
