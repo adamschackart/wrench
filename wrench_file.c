@@ -919,8 +919,29 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             // TODO: fileName
             // TODO: extension
 
-            // TODO: split
-            // TODO: join
+            if (!wrenCode(vm,
+
+            "static split(path) {\n"
+                "return path.replace(\"\\\\\", \"/\").split(\"/\")\n"
+            "}\n"
+
+            "static join(lhs, rhs) {\n"
+            #if _WIN32
+                "var mid = \"\\\\\"\n"
+                "if (lhs.endsWith(\"/\") || lhs.endsWith(\"\\\\\")) {\n"
+            #else
+                "var mid = \"/\"\n"
+                "if (lhs.endsWith(\"/\")) {\n"
+            #endif
+                    "return lhs + rhs\n"
+                "} else {\n"
+                    "return lhs + mid + rhs\n"
+                "}\n"
+            "}\n"
+
+            )) { return false; }
+
+            // TODO: join(list)
 
             WREN_METHOD(file, Path, true, isDirectory, "(path)", "(_)");
             WREN_METHOD(file, Path, true, isFile, "(path)", "(_)");

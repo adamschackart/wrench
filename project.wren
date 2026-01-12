@@ -55,6 +55,9 @@ class Util {
                     "  append(item) { add(item) }",
                     "  extend(list) { addAll(list) }",
                     "",
+                    "  pop(x) { removeAt(x) }",
+                    "  pop() { removeAt(-1) }",
+                    "",
                 ][-1..0].each { |line| lines.insert(index + 1, line) }
             }
 
@@ -85,6 +88,8 @@ class Util {
                     "",
                 ][-1..0].each { |line| lines.insert(index, line) }
             }
+
+            // TODO: findIndex
 
             /* Faster Sequence.where (removes redundant call to iteratorValue), thanks to Thorben Krüger.
              */
@@ -298,6 +303,8 @@ class Project {
         _undefs = _project != null ? _project.undefs.toList : []
         _extraCompilerFlags = _project != null ? _project.extraCompilerFlags.toList : []
         _extraLinkerFlags = _project != null ? _project.extraLinkerFlags.toList : []
+        _libraryPaths = _project != null ? _project.libraryPaths.toList : ["."]
+        _runtimeLibraryPaths = _project != null ? _project.runtimeLibraryPaths.toList : ["."]
         _extraObjects = _project != null ? _project.extraObjects.toList : []
         _libraries = _project != null ? _project.libraries.toList : []
         _async = _project != null ? _project.async : false // FIXME: Causes weird issues on MSVC.
@@ -384,9 +391,13 @@ class Project {
     extraLinkerFlags { _extraLinkerFlags }
     extraLinkerFlags=(value) { _extraLinkerFlags = value }
 
+    libraryPaths { _libraryPaths }
+    libraryPaths=(value) { _libraryPaths = value }
+
+    runtimeLibraryPaths { _runtimeLibraryPaths }
+    runtimeLibraryPaths=(value) { _runtimeLibraryPaths = value }
+
     // TODO: linkerScript (ld -T)
-    // TODO: libraryPaths
-    // TODO: runtimeLibraryPaths
     // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
 
@@ -658,6 +669,8 @@ class NativeNode {
         _undefs = _project.undefs.toList
         _extraCompilerFlags = _project.extraCompilerFlags.toList
         _extraLinkerFlags = _project.extraLinkerFlags.toList
+        _libraryPaths = _project.libraryPaths.toList
+        _runtimeLibraryPaths = _project.runtimeLibraryPaths.toList
         _extraObjects = _project.extraObjects.toList
         _libraries = _project.libraries.toList
         _async = _project.async
@@ -731,6 +744,58 @@ class NativeNode {
                 mode == "o")
     }
 
+    static executableExtension {
+        if (Platform.isWindows) {
+            return ".exe"
+        } else {
+            return ""
+        }
+    }
+
+    static sharedLibraryExtension {
+        if (Platform.isWindows) {
+            return ".dll"
+        } else {
+            return ".so"
+        }
+    }
+
+    static staticLibraryExtension {
+        if (Platform.isWindows) {
+            return ".lib"
+        } else {
+            return ".a"
+        }
+    }
+
+    static objectExtension {
+        if (Platform.isWindows) {
+            return ".obj"
+        } else {
+            return ".o"
+        }
+    }
+
+    fileExtension {
+        if (isExecutable) {
+            return type.executableExtension
+        }
+
+        if (isSharedLibrary) {
+            return type.sharedLibraryExtension
+        }
+
+        if (isStaticLibrary) {
+            return type.staticLibraryExtension
+        }
+
+        if (isObjects) {
+            return type.objectExtension
+        }
+
+        Fiber.abort("%(this)")
+    }
+
     // TODO: assembly mode - instead of outputting object, files, output asm code
 
     toString { "%(type)(%(name))" }
@@ -786,9 +851,13 @@ class NativeNode {
     extraLinkerFlags { _extraLinkerFlags }
     extraLinkerFlags=(value) { _extraLinkerFlags = value }
 
+    libraryPaths { _libraryPaths }
+    libraryPaths=(value) { _libraryPaths = value }
+
+    runtimeLibraryPaths { _runtimeLibraryPaths }
+    runtimeLibraryPaths=(value) { _runtimeLibraryPaths = value }
+
     // TODO: linkerScript (ld -T)
-    // TODO: libraryPaths
-    // TODO: runtimeLibraryPaths
     // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
     // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
 
@@ -872,7 +941,7 @@ class NativeNode {
         var jobs = []
 
         var flushJobs = Fn.new {
-            for (process in jobs) {
+            for (process in jobs.where { |job| job != null }) {
                 System.write(process.readStdout())
 
                 if (process.join() != 0) {
@@ -903,15 +972,42 @@ class NativeNode {
             }
 
             if (async) {
-                /*
-                 * TODO: Rather than waiting for one file that takes much longer than
-                 * others, scan this list in a round-robin fashion (calling sleep(0)
-                 * between checks) to replace completed build jobs with new processes.
-                 */
-                jobs.add(Process.create(commandLine))
+                if (false) {
+                    /*
+                     * NOTE: Rather than waiting for one file that takes much longer than
+                     * others, we scan this list in a round-robin fashion (calling sleep
+                     * between checks) to replace completed build jobs with new processes.
+                     */
+                    jobs.add(Process.create(commandLine))
 
-                if (jobs.count == maxAsyncCompileJobs) {
-                    flushJobs.call()
+                    if (jobs.count == maxAsyncCompileJobs) {
+                        flushJobs.call()
+                    }
+                } else {
+                    if (jobs.count == 0) {
+                        jobs = [null] * maxAsyncCompileJobs
+                    }
+
+                    while (jobs.all { |job| job != null && job.alive }) {
+                        // TODO: Sleep for a tenth of a second.
+                    }
+
+                    for (i in 0...jobs.count) {
+                        if (jobs[i] == null || !jobs[i].alive) {
+                            if (jobs[i] != null) {
+                                System.write(jobs[i].readStdout())
+
+                                if (jobs[i].join() != 0) {
+                                    Fiber.abort(jobs[i].readStderr())
+                                } else {
+                                    System.write(jobs[i].readStderr())
+                                }
+                            }
+
+                            jobs[i] = Process.create(commandLine)
+                            break
+                        }
+                    }
                 }
             } else {
                 /*
@@ -1061,25 +1157,21 @@ class NativeNode {
                 s.add("/DDEBUG=1")
             } else {
                 if (optimizeForCodeSize) {
-                    /*
-                     * TODO: Profile difference.
-                     */
-                    if (false) {
+                    if (true) {
                         s.add("/O1")
-                    } else if (false) {
+                    } else if (true) {
                         s.add("/Oi")
                     } else {
+                        // XXX: Seems to do nothing in my testing.
                         s.add("/Os")
                     }
                 } else {
-                    /*
-                     * TODO: Profile difference.
-                     */
                     if (true) {
                         s.add("/Ox")
                     } else if (true) {
                         s.add("/O2")
                     } else {
+                        // XXX: Seems to do nothing in my testing.
                         s.add("/Ot")
                     }
                 }
@@ -1094,9 +1186,6 @@ class NativeNode {
                 s.add("-DDEBUG=1")
             } else {
                 if (optimizeForCodeSize) {
-                    /*
-                     * TODO: Profile difference.
-                     */
                     if (true) {
                         s.add("-Os")
                     } else if (true) {
@@ -1105,7 +1194,16 @@ class NativeNode {
                         s.add("-Oz")
                     }
                 } else {
-                    s.add("-O3")
+                    if (false) {
+                        // Former `-Ofast` flag.
+                        s.add("-O3 -ffast-math")
+                    } else if (true) {
+                        s.add("-O3")
+                    } else if (true) {
+                        s.add("-O2")
+                    } else {
+                        s.add("-O1")
+                    }
                 }
 
                 /* XXX: Some versions of `ar` don't like link-time optimization.
@@ -1492,7 +1590,7 @@ class NativeNode {
             if (linker == "link") {
                 s.add("/OUT")
             } else {
-                return name + ".a" + " "
+                return name + ".a "
             }
 
             if (Platform.isWindows) {
@@ -1509,36 +1607,27 @@ class NativeNode {
         }
     }
 
-    platformObjectExtension_ {
-        if (Platform.isWindows) {
-            return ".obj"
-        } else {
-            return ".o"
-        }
+    sourceToOtherFileType_(source, extension) {
+        /*
+         * XXX TODO FIXME: This is an ugly and gross hack. Strip extension using the `file.Path` module.
+         */
+        var s = ( source.replace(".cpp", extension)
+                        .replace(".cc", extension)
+                        .replace(".cxx", extension)
+                        .replace(".c", extension) )
+
+        s = s.split("\\")[-1]
+        s = s.split("/")[-1]
+
+        return s
     }
 
     sourceToObject_(source) {
-        /*
-         * XXX TODO FIXME: This is an ugly and gross hack. Strip extension using the `file.Path` module.
-         */
-        var s = source.replace(".cpp", platformObjectExtension_).replace(".c", platformObjectExtension_)
-
-        s = s.split("\\")[-1]
-        s = s.split("/")[-1]
-
-        return s
+        return sourceToOtherFileType_(source, type.objectExtension)
     }
 
     sourceToDWARF_(source) {
-        /*
-         * XXX TODO FIXME: This is an ugly and gross hack. Strip extension using the `file.Path` module.
-         */
-        var s = source.replace(".cpp", ".dwo").replace(".c", ".dwo")
-
-        s = s.split("\\")[-1]
-        s = s.split("/")[-1]
-
-        return s
+        return sourceToOtherFileType_(source, ".dwo")
     }
 
     linkerObjects_ {
@@ -1613,15 +1702,53 @@ class NativeNode {
     }
 
     linkerLibraryPaths_ {
+        if (isStaticLibrary) {
+            return ""
+        }
+
         var s = []
 
-        /* TODO: libraryPaths with ["."] as the default.
-         */
-        if (!(isStaticLibrary || linker == "link")) {
-            s.add("-L.")
+        if (linker == "link") {
+            for (path in libraryPaths) {
+                /*
+                 * This works fine, but it's redundant.
+                 */
+                if (path == ".") {
+                    continue
+                }
 
-            if (linker != "tcc") {
-                s.add("-rpath '$ORIGIN'")
+                s.add("/LIBPATH:" + path)
+            }
+
+            for (path in runtimeLibraryPaths) {
+                if (path == ".") {
+                    continue
+                }
+
+                Fiber.abort("TODO")
+            }
+        } else {
+            for (path in libraryPaths) {
+                s.add("-L" + path)
+            }
+
+            for (path in runtimeLibraryPaths) {
+                if (path.startsWith("/")) {
+                    /*
+                     * Absolute path.
+                     */
+                    s.add("-rpath " + path)
+                } else if (path == ".") {
+                    /*
+                     * Base path (might not be necessary).
+                     */
+                    s.add("-rpath '$ORIGIN'")
+                } else {
+                    /*
+                     * Relative path.
+                     */
+                    s.add("-rpath '$ORIGIN/%(path)'")
+                }
             }
         }
 
@@ -2001,11 +2128,22 @@ class CopyNode {
             _project = project
         }
 
-        _name = name != null ? name : _project.name.toString
-        _verbose = _project.verbose
-
         _src = src
-        _dst = dst
+
+        if (dst == null) {
+            _dst = _src.split("\\")[-1]
+            _dst = _dst.split("/")[-1]
+        } else {
+            _dst = dst
+        }
+
+        if (false) {
+            _name = name != null ? name : _project.name.toString
+        } else {
+            _name = name != null ? name : _dst
+        }
+
+        _verbose = _project.verbose
 
         _deleteSrcOnClean = false
         _deleteDstOnClean = true
@@ -2246,14 +2384,18 @@ class HeaderNode {
             while (true) {
                 var line = src_file.readLine()
 
-                if (line == "") {
+                /* TODO: Return null at end of file?
+                 */
+                if (line == "" && src_file.eof()) {
                     break
                 }
 
                 var indentation = (line.count - line.trimStart().count) + extraIndentation
                 line = Util.escapeString(line.trim())
 
-                if (line == "") {
+                /* TODO: Return null at end of file?
+                 */
+                if (line == "" && src_file.eof()) {
                     dst_file.write("\n")
                     continue
                 }
@@ -2279,7 +2421,9 @@ class HeaderNode {
             while (true) {
                 var line = src_file.readLine()
 
-                if (line == "") {
+                /* TODO: Return null at end of file?
+                 */
+                if (line == "" && src_file.eof()) {
                     break
                 }
 
@@ -2469,6 +2613,9 @@ class AmalgamationNode {
 
                 var data = File.read(filename)
 
+                // Strip Windows-style carriage returns.
+                data = data.replace("\r", "")
+
                 if (trimLeft || trimRight) {
                     var split = data.split("\n")
 
@@ -2608,15 +2755,22 @@ var main = Fn.new {
             amalgamator.sources.add("wren/src/vm/wren_vm.h")
         }
 
-        for (filename in Path.list("wren/src/optional")) {
-            if (filename.endsWith(".c")) {
-                amalgamator.sources.add(filename)
-            }
-        }
+        // Make it easier to port to brand-new platforms, or create a new Wren implementation.
+        var stub = WrenVM.self.commandLine.any { |arg| arg.trimStart("-") == "stub-wren" }
 
-        for (filename in Path.list("wren/src/vm")) {
-            if (filename.endsWith(".c")) {
-                amalgamator.sources.add(filename)
+        if (stub) {
+            amalgamator.sources.add("wren_stubs.c")
+        } else {
+            for (filename in Path.list("wren/src/optional")) {
+                if (filename.endsWith(".c")) {
+                    amalgamator.sources.add(filename)
+                }
+            }
+
+            for (filename in Path.list("wren/src/vm")) {
+                if (filename.endsWith(".c")) {
+                    amalgamator.sources.add(filename)
+                }
             }
         }
 

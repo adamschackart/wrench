@@ -129,7 +129,20 @@ static void zip_Archive_save(WrenVM* vm)
 
 static void zip_Archive_is64(WrenVM* vm)
 {
-    WRENCH_STUB();
+    zip_Archive* self = (zip_Archive*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, zip, Archive);
+
+    const int status = zip_is64(self->zip);
+
+    if (status < 0)
+    {
+        wrenSetSlotString(vm, 0, zip_strerror(status));
+        wrenAbortFiber(vm, 0);
+    }
+    else
+    {
+        wrenSetSlotBool(vm, 0, status);
+    }
 }
 
 static void zip_Archive_listEntries_(WrenVM* vm)
