@@ -320,6 +320,7 @@ class Project {
         _optimizeForCodeSize = _project != null ? _project.optimizeForCodeSize : true
 
         _maxAsyncCompileJobs = _project != null ? _project.maxAsyncCompileJobs : (Platform.logicalCoreCount * 2)
+        _printBanners = true
 
         if (_maxAsyncCompileJobs < 1) {
             _maxAsyncCompileJobs = 1
@@ -342,6 +343,9 @@ class Project {
 
     name { _name }
     name=(value) { _name = value }
+
+    printBanners { _printBanners }
+    printBanners=(value) { _printBanners = value }
 
     compiler { _compiler }
     compiler=(value) { _compiler = value }
@@ -385,6 +389,18 @@ class Project {
         undefs.add(name)
     }
 
+    isDefined(key) {
+        return Project.isDefined_(key, defines)
+    }
+
+    isDefinedTrue(key) {
+        return Project.isDefinedTrue_(key, defines)
+    }
+
+    isDefinedFalse(key) {
+        return Project.isDefinedFalse_(key, defines)
+    }
+
     extraCompilerFlags { _extraCompilerFlags }
     extraCompilerFlags=(value) { _extraCompilerFlags = value }
 
@@ -396,6 +412,16 @@ class Project {
 
     runtimeLibraryPaths { _runtimeLibraryPaths }
     runtimeLibraryPaths=(value) { _runtimeLibraryPaths = value }
+
+    addLibraryPath(value) {
+        return Project.addLibraryPath_(this, value)
+    }
+
+    addLibraryPaths(values) {
+        for (value in values) {
+            addLibraryPath(value)
+        }
+    }
 
     // TODO: linkerScript (ld -T)
     // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
@@ -475,35 +501,7 @@ class Project {
     finalizeLinkerCommandLine=(value) { _finalizeLinkerCommandLine = value }
 
     configure(config) {
-        var storeFallbacks = config.storeFallbacks
-        config.storeFallbacks = false
-
-        compiler = config.getStr("compiler", compiler)
-        linker = config.getStr("linker", linker)
-        warningLevel = config.getNum("warning-level", warningLevel)
-
-        // TODO: link-time-optimization
-        // TODO: strip-debug-symbols
-
-        // TODO: debug/release
-        // TODO: verbose/quiet
-        // TODO: optimize-for-code-size/optimize-for-performance
-        // TODO: async/blocking
-        // TODO: enable-rtti/disable-rtti
-        // TODO: enable-exceptions/disable-exceptions
-        // TODO: is-gui/is-cli
-        // TODO: dynamic-crt/static-crt
-
-        // TODO: sources=A,B,C
-        // TODO: include-paths=A,B,C
-        // TODO: defines=A,B,C
-        // TODO: undefs=A,B,C
-        // TODO: extra-compiler-flags=A,B,C
-        // TODO: extra-linker-flags=A,B,C
-        // TODO: extra-objects=A,B,C
-        // TODO: libraries=A,B,C
-
-        config.storeFallbacks = storeFallbacks
+        Project.configure_(this, config)
     }
 
     build() {
@@ -555,6 +553,147 @@ class Project {
     }
 
     // ===== [ private utils ] =================================================
+
+    static configure_(node, config) {
+        var storeFallbacks = config.storeFallbacks
+        config.storeFallbacks = false
+
+        if (node is Project) {
+            node.printBanners = config.getBool("print-banners", node.printBanners)
+        }
+
+        node.compiler = config.getStr("compiler", node.compiler)
+        node.linker = config.getStr("linker", node.linker)
+        node.warningLevel = config.getNum("warning-level", node.warningLevel)
+
+        node.linkTimeOptimization = config.getBool("link-time-optimization", node.linkTimeOptimization)
+        node.stripDebugSymbols = config.getBool("strip-debug-symbols", node.stripDebugSymbols)
+
+        if (true) {
+            node.debug = config.getBool("debug", node.debug)
+        } else {
+            node.release = config.getBool("release", node.release)
+        }
+
+        if (true) {
+            node.verbose = config.getBool("verbose", node.verbose)
+        } else {
+            node.quiet = config.getBool("quiet", node.quiet)
+        }
+
+        if (true) {
+            node.optimizeForCodeSize = config.getBool("optimize-for-code-size", node.optimizeForCodeSize)
+        } else {
+            node.optimizeForPerformance = config.getBool("optimize-for-performance", node.optimizeForPerformance)
+        }
+
+        if (true) {
+            node.async = config.getBool("async", node.async)
+        } else {
+            node.blocking = config.getBool("blocking", node.blocking)
+        }
+
+        if (true) {
+            node.enableRTTI = config.getBool("enable-rtti", node.enableRTTI)
+        } else {
+            node.disableRTTI = config.getBool("disable-rtti", node.disableRTTI)
+        }
+
+        if (true) {
+            node.enableExceptions = config.getBool("enable-exceptions", node.enableExceptions)
+        } else {
+            node.disableExcenableExceptions = config.getBool("disable-exceptions", node.disableExcenableExceptions)
+        }
+
+        if (true) {
+            node.isGUI = config.getBool("is-gui", node.isGUI)
+        } else {
+            node.isCLI = config.getBool("is-cli", node.isCLI)
+        }
+
+        if (true) {
+            node.dynamicCRT = config.getBool("dynamic-crt", node.dynamicCRT)
+        } else {
+            node.staticCRT = config.getBool("static-crt", node.staticCRT)
+        }
+
+        // TODO: sources=A,B,C
+        // TODO: include-paths=A,B,C
+        // TODO: defines=A,B,C
+        // TODO: undefs=A,B,C
+        // TODO: extra-compiler-flags=A,B,C
+        // TODO: extra-linker-flags=A,B,C
+        // TODO: extra-objects=A,B,C
+        // TODO: libraries=A,B,C
+        // TODO: library-paths=A,B,C
+        // TODO: runtime-library-paths=A,B,C
+
+        config.storeFallbacks = storeFallbacks
+    }
+
+    static isDefined_(key, list) {
+        for (item in list) {
+            if (item is String) {
+                var s = item.split("=")
+
+                if (s[0] == key) {
+                    return true
+                }
+            } else if (item is List) {
+                if (item[0] == key) {
+                    return true
+                }
+            } else {
+                Fiber.abort("TODO")
+            }
+        }
+
+        return false
+    }
+
+    static isDefinedTrue_(key, list) {
+        for (item in list) {
+            if (item is String) {
+                var s = item.split("=")
+
+                if (s[0] != key) {
+                    continue
+                }
+
+                if (s.count > 1 && s[1] == "0") {
+                    return false
+                }
+
+                return true
+            } else if (item is List) {
+                if (item[0] != key) {
+                    continue
+                }
+
+                if (item[1] == 0 || item[1] == "0") {
+                    return false
+                }
+
+                return true
+            } else {
+                Fiber.abort("TODO")
+            }
+        }
+
+        return false
+    }
+
+    static isDefinedFalse_(key, list) {
+        Fiber.abort("TODO")
+    }
+
+    static addLibraryPath_(node, path) {
+        node.libraryPaths.add(path)
+
+        if (!Platform.isWindows) {
+            node.runtimeLibraryPaths.add(path)
+        }
+    }
 
     ensureVisualStudioCompilerSetup_() {
         /*
@@ -845,6 +984,18 @@ class NativeNode {
         undefs.add(name)
     }
 
+    isDefined(key) {
+        return Project.isDefined_(key, defines)
+    }
+
+    isDefinedTrue(key) {
+        return Project.isDefinedTrue_(key, defines)
+    }
+
+    isDefinedFalse(key) {
+        return Project.isDefinedFalse_(key, defines)
+    }
+
     extraCompilerFlags { _extraCompilerFlags }
     extraCompilerFlags=(value) { _extraCompilerFlags = value }
 
@@ -856,6 +1007,16 @@ class NativeNode {
 
     runtimeLibraryPaths { _runtimeLibraryPaths }
     runtimeLibraryPaths=(value) { _runtimeLibraryPaths = value }
+
+    addLibraryPath(value) {
+        return Project.addLibraryPath_(this, value)
+    }
+
+    addLibraryPaths(values) {
+        for (value in values) {
+            addLibraryPath(value)
+        }
+    }
 
     // TODO: linkerScript (ld -T)
     // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
@@ -937,7 +1098,17 @@ class NativeNode {
     haveCompiledCpp { _haveCompiledCpp }
     haveCompiledCpp=(value) { _haveCompiledCpp = value }
 
+    configure(config) {
+        Project.configure_(this, config)
+    }
+
     compile() {
+        if (verbose && project.printBanners) {
+            System.print("-" * 80)
+            System.print("\tCompiling %(name) (%(mode)) for " + (debug ? "debugging" : (optimizeForCodeSize ? "size" : "speed")))
+            System.print("-" * 80)
+        }
+
         var jobs = []
 
         var flushJobs = Fn.new {
@@ -1026,6 +1197,12 @@ class NativeNode {
     link() {
         if (isObjects) {
             return
+        }
+
+        if (verbose && project.printBanners) {
+            System.print("-" * 80)
+            System.print("\tLinking %(name) (%(mode)) for " + (debug ? "debugging" : (optimizeForCodeSize ? "size" : "speed")))
+            System.print("-" * 80)
         }
 
         var commandLine = linkerCommandLine_

@@ -687,6 +687,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_getc
 #define wrench_getc getc
 #endif
+#ifndef wrench_getenv
+#define wrench_getenv getenv
+#endif
 #ifndef wrench_malloc
 #define wrench_malloc malloc
 #endif
@@ -708,6 +711,13 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_putchar
 #define wrench_putchar putchar
 #endif
+#if !defined(wrench_putenv)
+    #if _MSC_VER
+        #define wrench_putenv _putenv
+    #else
+        #define wrench_putenv putenv
+    #endif
+#endif
 #ifndef wrench_realloc
 #define wrench_realloc realloc
 #endif
@@ -719,6 +729,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_rename
 #define wrench_rename rename
+#endif
+#ifndef wrench_setenv
+#define wrench_setenv setenv
 #endif
 #ifndef wrench_snprintf
 #define wrench_snprintf snprintf
@@ -805,6 +818,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_trunc
 #define wrench_trunc trunc
+#endif
+#ifndef wrench_unsetenv
+#define wrench_unsetenv unsetenv
 #endif
 
 /* ===== [ utilities ] ====================================================== */
@@ -1751,6 +1767,7 @@ static bool wrenchSetBasePath(WrenchContext* context, const char* path)
     }
     else
     {
+        context->base_path = NULL;
         return true;
     }
 }

@@ -85,6 +85,110 @@ static void platform_Platform_pageSize(WrenVM* vm)
 
 /*
 ================================================================================
+ * ~~ [ environment ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+static void platform_Environment_index1_get(WrenVM* vm)
+{
+    const char* key = wrenGetSlotString(vm, 1);
+    const char* val = wrench_getenv(key);
+
+    if (val != NULL)
+    {
+        wrenSetSlotString(vm, 0, val);
+    }
+    else
+    {
+        wrenSetSlotNull(vm, 0);
+    }
+}
+
+static void platform_Environment_index1_set(WrenVM* vm)
+{
+    const char* key = wrenGetSlotString(vm, 1);
+
+    switch (wrenGetSlotType(vm, 2))
+    {
+        case WREN_TYPE_STRING:
+        {
+            const char* val = wrenGetSlotString(vm, 2);
+
+            #if _MSC_VER
+            {
+                const size_t buffer_length = wrench_strlen(key) + wrench_strlen(val) + 2;
+                char* temp = (char*)wrenStackMalloc(vm, buffer_length);
+
+                if (temp == NULL)
+                {
+                    temp = (char*)wrench_malloc(buffer_length);
+                }
+
+                if (temp == NULL)
+                {
+                    wrenSetSlotString(vm, 0, "Out of memory - failed to allocate temp buffer for putenv.");
+                    wrenAbortFiber(vm, 0);
+
+                    return;
+                }
+
+                wrench_snprintf(temp, buffer_length, "%s=%s", key, val);
+
+                if (wrench_putenv(temp) != 0)
+                {
+                    wrenSetSlotString(vm, 0, "putenv failed");
+                    wrenAbortFiber(vm, 0);
+                }
+
+                if (wrenIsStackMemory(vm, temp))
+                {
+                    wrenStackFree(vm, temp, buffer_length);
+                }
+                else
+                {
+                    wrench_free(temp);
+                }
+            }
+            #else
+            {
+                if (wrench_setenv(key, val, 1) != 0)
+                {
+                    wrenSetSlotString(vm, 0, "setenv failed"); // TODO strerror
+                    wrenAbortFiber(vm, 0);
+                }
+            }
+            #endif
+        }
+        break;
+
+        case WREN_TYPE_NULL:
+        {
+            #if _MSC_VER
+            {
+                wrench_assert(0, "TODO");
+            }
+            #else
+            {
+                if (wrench_unsetenv(key) != 0)
+                {
+                    wrenSetSlotString(vm, 0, "unsetenv failed"); // TODO strerror
+                    wrenAbortFiber(vm, 0);
+                }
+            }
+            #endif
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "%i", (int)wrenGetSlotType(vm, 2));
+        }
+        break;
+    }
+}
+
+/*
+================================================================================
  * ~~ [ (un)hook ] ~~ *
 --------------------------------------------------------------------------------
 */
@@ -603,6 +707,14 @@ WRENCH_EXPORT bool platformWrenInit(WrenVM* vm)
             {
                 return false;
             }
+        }
+        WREN_END_CLASS();
+
+        WREN_BEGIN_CLASS_EX(platform, Environment, NULL, NULL);
+        {
+            WREN_INDEX_PROPERTY(platform, Environment, true, 1);
+
+            // TODO: toMap (get all environment variables).
         }
         WREN_END_CLASS();
 
