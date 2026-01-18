@@ -609,6 +609,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #include <math.h>
     #include <stdlib.h>
     #include <string.h>
+    #include <time.h>
 #endif
 
 #if _WIN32 && !WRENCH_NO_WINDOWS_H
@@ -627,6 +628,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #if !_WIN32 && !WRENCH_NO_POSIX_HEADERS
     #include <dlfcn.h>
     #include <signal.h>
+    #include <sys/time.h>
     #include <unistd.h>
 #endif
 
@@ -641,6 +643,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_calloc
 #define wrench_calloc calloc
+#endif
+#ifndef wrench_clock_gettime
+#define wrench_clock_gettime clock_gettime
 #endif
 #ifndef wrench_fabs
 #define wrench_fabs fabs
@@ -690,6 +695,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_getenv
 #define wrench_getenv getenv
 #endif
+#ifndef wrench_gettimeofday
+#define wrench_gettimeofday gettimeofday
+#endif
 #ifndef wrench_malloc
 #define wrench_malloc malloc
 #endif
@@ -701,6 +709,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_memset
 #define wrench_memset memset
+#endif
+#ifndef wrench_nanosleep
+#define wrench_nanosleep nanosleep
 #endif
 #ifndef wrench_pow
 #define wrench_pow pow
@@ -821,6 +832,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_unsetenv
 #define wrench_unsetenv unsetenv
+#endif
+#ifndef wrench_usleep
+#define wrench_usleep usleep
 #endif
 
 /* ===== [ utilities ] ====================================================== */
@@ -2676,13 +2690,6 @@ static size_t wrenchGlobalQuitFuncCount;
     #include <wrench_image.c>
     #endif
 
-    #ifndef WRENCH_HAVE_TCC
-    #define WRENCH_HAVE_TCC 0
-    #endif
-    #if WRENCH_HAVE_TCC
-    #include <wrench_tcc.c>
-    #endif
-
     #ifndef WRENCH_HAVE_PLATFORM
     #define WRENCH_HAVE_PLATFORM 1
     #endif
@@ -2709,6 +2716,20 @@ static size_t wrenchGlobalQuitFuncCount;
     #endif
     #if WRENCH_HAVE_RECT
     #include <wrench_rect.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_TCC
+    #define WRENCH_HAVE_TCC 0
+    #endif
+    #if WRENCH_HAVE_TCC
+    #include <wrench_tcc.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_TIME
+    #define WRENCH_HAVE_TIME 1
+    #endif
+    #if WRENCH_HAVE_TIME
+    #include <wrench_time.c>
     #endif
 
     #ifndef WRENCH_HAVE_UTIL
@@ -2836,16 +2857,6 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
         }
         #endif /* WRENCH_HAVE_IMAGE */
 
-        #if WRENCH_HAVE_TCC
-        {
-            if (!tccWrenInit(vm))
-            {
-                wrenFreeExtendedVM(vm, false);
-                return NULL;
-            }
-        }
-        #endif /* WRENCH_HAVE_TCC */
-
         #if WRENCH_HAVE_PLATFORM
         {
             if (!platformWrenInit(vm))
@@ -2885,6 +2896,26 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             }
         }
         #endif /* WRENCH_HAVE_RECT */
+
+        #if WRENCH_HAVE_TCC
+        {
+            if (!tccWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_TCC */
+
+        #if WRENCH_HAVE_TIME
+        {
+            if (!timeWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_TIME */
 
         #if WRENCH_HAVE_UTIL
         {
@@ -2988,6 +3019,18 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         }
         #endif /* WRENCH_HAVE_UTIL */
 
+        #if WRENCH_HAVE_TIME
+        {
+            timeWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_TIME */
+
+        #if WRENCH_HAVE_TCC
+        {
+            tccWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_TCC */
+
         #if WRENCH_HAVE_RECT
         {
             rectWrenQuit();
@@ -3011,12 +3054,6 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
             platformWrenQuit();
         }
         #endif /* WRENCH_HAVE_PLATFORM */
-
-        #if WRENCH_HAVE_TCC
-        {
-            tccWrenQuit();
-        }
-        #endif /* WRENCH_HAVE_TCC */
 
         #if WRENCH_HAVE_IMAGE
         {

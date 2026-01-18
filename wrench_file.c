@@ -594,7 +594,124 @@ static void file_File_putc(WrenVM* vm)
 
             if (s[0] != '\0')
             {
-                wrench_assert(s[1] == '\0', "multi-char string \"%s\"", s);
+                if (0)
+                {
+                    wrench_assert(s[1] == '\0', "multi-char string \"%s\"", s);
+                }
+                else
+                {
+                    /* XXX: This is super hacky. Consider using fwrite here?
+                     */
+                    switch (wrench_strlen(s))
+                    {
+                        case 1: break;
+
+                        case 2:
+                        {
+                            const int s0 = wrench_putc(s[0], self->file);
+
+                            if (s0 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            const int s1 = wrench_putc(s[1], self->file);
+
+                            if (s1 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            // TODO: Untested - is this correct?
+                            wrenSetSlotInt(vm, 0, s0 << 8 | s1);
+
+                            return;
+                        }
+                        break;
+
+                        case 3:
+                        {
+                            const int s0 = wrench_putc(s[0], self->file);
+
+                            if (s0 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            const int s1 = wrench_putc(s[1], self->file);
+
+                            if (s1 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            const int s2 = wrench_putc(s[2], self->file);
+
+                            if (s2 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            // TODO: Untested - are values ordered correctly?
+                            wrenSetSlotInt(vm, 0, s0 << 16 | s1 << 8 | s2);
+
+                            return;
+                        }
+                        break;
+
+                        case 4:
+                        {
+                            const int s0 = wrench_putc(s[0], self->file);
+
+                            if (s0 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            const int s1 = wrench_putc(s[1], self->file);
+
+                            if (s1 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            const int s2 = wrench_putc(s[2], self->file);
+
+                            if (s2 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            const int s3 = wrench_putc(s[3], self->file);
+
+                            if (s3 == EOF)
+                            {
+                                wrenSetSlotInt(vm, 0, EOF);
+                                return;
+                            }
+
+                            // TODO: Untested - are these values in the correct order?
+                            wrenSetSlotInt(vm, 0, s0 << 24 | s1 << 16 | s2 << 8 | s3);
+
+                            return;
+                        }
+                        break;
+
+                        default:
+                        {
+                            wrench_assert(0, "%s", s);
+                        }
+                        break;
+                    }
+                }
 
             #if !_WIN32
                 if (s[0] == '\n' && file_File_ensureCRLF)
@@ -1113,6 +1230,12 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
                     "return r\n"
                 "}\n"
             #endif
+            "}\n"
+
+            "static write(filename, contents) {\n"
+                "var file = File.open(filename, \"wb\")\n"
+                "file.write(contents)\n"
+                "file.close()\n"
             "}\n"
 
             )) { return false; }

@@ -554,6 +554,30 @@ WRENCH_EXPORT bool processWrenInit(WrenVM* vm)
             "static create(command_line, options, environment) {\n"
                 "if (command_line is String) {\n"
                     "command_line = command_line.split(\" \")\n"
+                    /*
+                     * Send quoted arguments as a single argument, so subprocess.h can apply quotes.
+                     */
+                    "var copy = command_line.toList\n"
+                    "command_line.clear()\n"
+                    "var in_quotes = false\n"
+
+                    "for (item in copy) {\n"
+                        "if (in_quotes) {\n"
+                            "command_line[-1] = \"%(command_line[-1]) %(item)\"\n"
+
+                            "if (item && item[-1] == \"\\\"\") {\n"
+                                "command_line[-1] = command_line[-1][0...-1]\n"
+                                "in_quotes = false\n"
+                            "}\n"
+                        "} else {\n"
+                            "command_line.add(item)\n"
+
+                            "if (item && item[0] == \"\\\"\") {\n"
+                                "command_line[-1] = command_line[-1][1..-1]\n"
+                                "in_quotes = true\n"
+                            "}\n"
+                        "}\n"
+                    "}\n"
                 "}\n"
 
                 "return create_(command_line, options, environment, null)\n"

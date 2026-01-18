@@ -59,6 +59,7 @@ else
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o platform.so wrench_platform.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o process.so wrench_process.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o rect.so wrench_rect.c wren.o -lm -ldl &
+    $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o time.so wrench_time.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o util.so wrench_util.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o vector.so wrench_vector.c wren.o -lm -ldl &
     $COMPILER $COMPILER_FLAGS -I. -Iwren/src/include -Wno-format-zero-length -Wno-format-truncation -fPIC -shared -o vm.so wrench_vm.c wren.o -lm -ldl &

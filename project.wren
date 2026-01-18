@@ -9,6 +9,7 @@ import "config" for Config
 import "file" for File, Path
 import "platform" for Platform
 import "process" for Process
+import "time" for Timer
 import "util" for NumUtil, StringUtil
 import "vm" for WrenVM
 
@@ -130,6 +131,28 @@ class Util {
             } else {
                 [
                     "  isEmpty { byteCount_ == 0 }",
+                    "",
+                ][-1..0].each { |line| lines.insert(index + 1, line) }
+            }
+
+            /* Sequence.none and Python-like aliases.
+             */
+            index = lines.indexOf("class Sequence {")
+
+            if (index < 0) {
+                Fiber.abort("failed to patch wren core for Sequence.none")
+            } else {
+                [
+                    "  filter(f) { where(f) }",
+                    "  apply(f) { each(f) }",
+                    "",
+                    "  none(f) {",
+                    "    for (element in this) {",
+                    "      if (f.call(element)) return false",
+                    "    }",
+                    "",
+                    "    return true",
+                    "  }",
                     "",
                 ][-1..0].each { |line| lines.insert(index + 1, line) }
             }
@@ -505,12 +528,7 @@ class Project {
     }
 
     build() {
-        /*
-         * FIXME: This uses the C clock() function, which can be low-resolution and imprecise.
-         * Need to create a time module that calls QueryPerformanceCounter (or clock_gettime).
-         * EDIT: We could also just patch System directly (see wren_core.c for inspiration)...
-         */
-        //var start_time = System.clock
+        var start_time = Timer.seconds
 
         for (node in nodes) {
             node.build()
@@ -522,18 +540,13 @@ class Project {
             node.finish("build")
         }
 
-        /*if (verbose) {
-            System.print("%(this).build done in %(System.clock - start_time) seconds.")
-        }*/
+        if (verbose) {
+            System.print("%(this).build done in %(Timer.seconds - start_time) seconds.")
+        }
     }
 
     clean() {
-        /*
-         * FIXME: This uses the C clock() function, which can be low-resolution and imprecise.
-         * Need to create a time module that calls QueryPerformanceCounter (or clock_gettime).
-         * EDIT: We could also just patch System directly (see wren_core.c for inspiration)...
-         */
-        //var start_time = System.clock
+        var start_time = Timer.seconds
 
         for (node in nodes) {
             node.clean()
@@ -547,9 +560,9 @@ class Project {
             Path.tryRemove(filename)
         }
 
-        /*if (verbose) {
-            System.print("%(this).clean done in %(System.clock - start_time) seconds.")
-        }*/
+        if (verbose) {
+            System.print("%(this).clean done in %(Timer.seconds - start_time) seconds.")
+        }
     }
 
     // ===== [ private utils ] =================================================
@@ -564,58 +577,36 @@ class Project {
 
         node.compiler = config.getStr("compiler", node.compiler)
         node.linker = config.getStr("linker", node.linker)
+
         node.warningLevel = config.getNum("warning-level", node.warningLevel)
+        node.maxAsyncCompileJobs = config.getNum("max-async-compile-jobs", node.maxAsyncCompileJobs)
 
         node.linkTimeOptimization = config.getBool("link-time-optimization", node.linkTimeOptimization)
         node.stripDebugSymbols = config.getBool("strip-debug-symbols", node.stripDebugSymbols)
 
-        if (true) {
-            node.debug = config.getBool("debug", node.debug)
-        } else {
-            node.release = config.getBool("release", node.release)
-        }
+        node.debug = config.getBool("debug", node.debug)
+        node.release = config.getBool("release", node.release)
 
-        if (true) {
-            node.verbose = config.getBool("verbose", node.verbose)
-        } else {
-            node.quiet = config.getBool("quiet", node.quiet)
-        }
+        node.verbose = config.getBool("verbose", node.verbose)
+        node.quiet = config.getBool("quiet", node.quiet)
 
-        if (true) {
-            node.optimizeForCodeSize = config.getBool("optimize-for-code-size", node.optimizeForCodeSize)
-        } else {
-            node.optimizeForPerformance = config.getBool("optimize-for-performance", node.optimizeForPerformance)
-        }
+        node.optimizeForCodeSize = config.getBool("optimize-for-code-size", node.optimizeForCodeSize)
+        node.optimizeForPerformance = config.getBool("optimize-for-performance", node.optimizeForPerformance)
 
-        if (true) {
-            node.async = config.getBool("async", node.async)
-        } else {
-            node.blocking = config.getBool("blocking", node.blocking)
-        }
+        node.async = config.getBool("async", node.async)
+        node.blocking = config.getBool("blocking", node.blocking)
 
-        if (true) {
-            node.enableRTTI = config.getBool("enable-rtti", node.enableRTTI)
-        } else {
-            node.disableRTTI = config.getBool("disable-rtti", node.disableRTTI)
-        }
+        node.enableRTTI = config.getBool("enable-rtti", node.enableRTTI)
+        node.disableRTTI = config.getBool("disable-rtti", node.disableRTTI)
 
-        if (true) {
-            node.enableExceptions = config.getBool("enable-exceptions", node.enableExceptions)
-        } else {
-            node.disableExcenableExceptions = config.getBool("disable-exceptions", node.disableExcenableExceptions)
-        }
+        node.enableExceptions = config.getBool("enable-exceptions", node.enableExceptions)
+        node.disableExceptions = config.getBool("disable-exceptions", node.disableExceptions)
 
-        if (true) {
-            node.isGUI = config.getBool("is-gui", node.isGUI)
-        } else {
-            node.isCLI = config.getBool("is-cli", node.isCLI)
-        }
+        node.isGUI = config.getBool("is-gui", node.isGUI)
+        node.isCLI = config.getBool("is-cli", node.isCLI)
 
-        if (true) {
-            node.dynamicCRT = config.getBool("dynamic-crt", node.dynamicCRT)
-        } else {
-            node.staticCRT = config.getBool("static-crt", node.staticCRT)
-        }
+        node.dynamicCRT = config.getBool("dynamic-crt", node.dynamicCRT)
+        node.staticCRT = config.getBool("static-crt", node.staticCRT)
 
         // TODO: sources=A,B,C
         // TODO: include-paths=A,B,C
@@ -708,7 +699,17 @@ class Project {
 
         // ===== [ 2026 ] ======================================================
 
-        // TODO
+        if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
+            Fiber.abort("TODO")
+        }
+
+        if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
+            Fiber.abort("TODO")
+        }
+
+        if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
+            Fiber.abort("TODO")
+        }
 
         // ===== [ 2022 ] ======================================================
 
@@ -1160,7 +1161,10 @@ class NativeNode {
                     }
 
                     while (jobs.all { |job| job != null && job.alive }) {
-                        // TODO: Sleep for a tenth of a second.
+                        /*
+                         * Don't burn a core - just check every tenth of a second or so.
+                         */
+                        Timer.sleepMS(100)
                     }
 
                     for (i in 0...jobs.count) {
@@ -3042,6 +3046,9 @@ var main = Fn.new {
 
         node = NativeNode.new(project, "rect", "shared_library")
         node.sources.add("wrench_rect.c")
+
+        node = NativeNode.new(project, "time", "shared_library")
+        node.sources.add("wrench_time.c")
 
         node = NativeNode.new(project, "util", "shared_library")
         node.sources.add("wrench_util.c")

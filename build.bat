@@ -43,6 +43,7 @@ if "%BUILTIN_STDLIB%"=="true" (
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:platform.dll wrench_platform.c wren.obj
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:process.dll wrench_process.c wren.obj
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:rect.dll wrench_rect.c wren.obj
+    cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:time.dll wrench_time.c wren.obj
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:util.dll wrench_util.c wren.obj
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:vector.dll wrench_vector.c wren.obj
     cl %COMPILER_FLAGS% /nologo /I. /Iwren/src/include /LD /Fe:vm.dll wrench_vm.c wren.obj
