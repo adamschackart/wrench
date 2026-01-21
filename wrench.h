@@ -713,6 +713,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_gettimeofday
 #define wrench_gettimeofday gettimeofday
 #endif
+#ifndef wrench_localtime
+#define wrench_localtime localtime
+#endif
 #ifndef wrench_malloc
 #define wrench_malloc malloc
 #endif
@@ -811,6 +814,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
         #define wrench_stdout stdout
     #endif
 #endif
+#ifndef wrench_strftime
+#define wrench_strftime strftime
+#endif
 #if !defined(wrench_strcasecmp)
     #if _WIN32
         #define wrench_strcasecmp _stricmp
@@ -842,6 +848,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_system
 #define wrench_system system
+#endif
+#ifndef wrench_time
+#define wrench_time time
 #endif
 #ifndef wrench_tolower
 #define wrench_tolower tolower

@@ -26,25 +26,25 @@ If git is not installed, external dependencies must be copied into the `wrench` 
 - Wrench++ - compatibility layer with Wren++ or wrenbind17.
 - Compatibility with wren-cli.
 - Copy path resolution/relative import logic from wren-cli.
-- Visual Studio solution/project files.
 - read-eval-print loop (repl).
 - Debugger.
 - Static analyzer.
+- Tree shaker.
+- Linter.
 
 - File-like object that writes to memory.
 - Thread and thread pool objects.
 
 - regular expressions (regex) module.
-- sqlite module.
-- date and time module.
 - json module.
 - xml module.
 - diff module.
 - base64 module.
 - csv module.
 - logging module.
-- curses module.
 
+- sqlite wrapper.
+- curses wrapper.
 - openssl wrapper.
 - libuv wrapper.
 - zeromq wrapper.

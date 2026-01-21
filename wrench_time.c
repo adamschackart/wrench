@@ -10,6 +10,108 @@
 
 /*
 ================================================================================
+ * ~~ [ date ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+static bool time_Date_giveStrings = true;
+
+static void time_Date_giveStrings_get(WrenVM* vm)
+{
+    wrenSetSlotBool(vm, 0, time_Date_giveStrings);
+}
+
+static void time_Date_giveStrings_set(WrenVM* vm)
+{
+    time_Date_giveStrings = wrenGetSlotBool(vm, 1);
+}
+
+static void time_Date_year(WrenVM* vm)
+{
+    time_t raw_time;
+    wrench_time(&raw_time);
+
+    struct tm* time_info = wrench_localtime(&raw_time);
+    wrench_assert(time_info != NULL, "");
+
+    if (time_Date_giveStrings)
+    {
+        char s[1024];
+        wrench_strftime(s, sizeof(s), "%Y", time_info);
+
+        wrenSetSlotString(vm, 0, (const char*)s);
+    }
+    else
+    {
+        wrenSetSlotInt(vm, 0, time_info->tm_year + 1900);
+    }
+}
+
+static void time_Date_month(WrenVM* vm)
+{
+    time_t raw_time;
+    wrench_time(&raw_time);
+
+    struct tm* time_info = wrench_localtime(&raw_time);
+    wrench_assert(time_info != NULL, "");
+
+    if (time_Date_giveStrings)
+    {
+        char s[1024];
+        wrench_strftime(s, sizeof(s), "%B", time_info);
+
+        wrenSetSlotString(vm, 0, (const char*)s);
+    }
+    else
+    {
+        wrenSetSlotInt(vm, 0, time_info->tm_mon);
+    }
+}
+
+static void time_Date_day(WrenVM* vm)
+{
+    time_t raw_time;
+    wrench_time(&raw_time);
+
+    struct tm* time_info = wrench_localtime(&raw_time);
+    wrench_assert(time_info != NULL, "");
+
+    if (time_Date_giveStrings)
+    {
+        char s[1024];
+        wrench_strftime(s, sizeof(s), "%d", time_info);
+
+        wrenSetSlotString(vm, 0, (const char*)s);
+    }
+    else
+    {
+        wrenSetSlotInt(vm, 0, time_info->tm_mday);
+    }
+}
+
+static void time_Date_weekday(WrenVM* vm)
+{
+    time_t raw_time;
+    wrench_time(&raw_time);
+
+    struct tm* time_info = wrench_localtime(&raw_time);
+    wrench_assert(time_info != NULL, "");
+
+    if (time_Date_giveStrings)
+    {
+        char s[1024];
+        wrench_strftime(s, sizeof(s), "%A", time_info);
+
+        wrenSetSlotString(vm, 0, (const char*)s);
+    }
+    else
+    {
+        wrenSetSlotInt(vm, 0, time_info->tm_wday);
+    }
+}
+
+/*
+================================================================================
  * ~~ [ timer ] ~~ *
 --------------------------------------------------------------------------------
 */
@@ -137,6 +239,11 @@ static void time_Timer_seconds(WrenVM* vm)
         //
     }
 
+    static bool timeDateWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
     static bool timeTimerWrenInitEx(WrenVM* vm)
     {
         return true;
@@ -197,6 +304,30 @@ WRENCH_EXPORT bool timeWrenInit(WrenVM* vm)
 
     if (!wrenBeginModule(vm, "time")) { return false; } else
     {
+        WREN_BEGIN_CLASS_EX(time, Date, NULL, NULL);
+        {
+            WREN_PROPERTY(time, Date, true, giveStrings);
+
+            WREN_METHOD(time, Date, true, year, "", "");
+            WREN_METHOD(time, Date, true, month, "", "");
+            WREN_METHOD(time, Date, true, day, "", "");
+            WREN_METHOD(time, Date, true, weekday, "", "");
+
+            // TODO: date (YYYY/MM/DD)
+
+            if (!timeDateWrenInitEx(vm))
+            {
+                return false;
+            }
+        }
+        WREN_END_CLASS();
+
+        // TODO: Clock.hour
+        // TODO: Clock.minute
+        // TODO: Clock.second
+
+        // TODO: Clock.time (HH:MM:SS)
+
         WREN_BEGIN_CLASS_EX(time, Timer, NULL, NULL);
         {
             WREN_METHOD(time, Timer, true, sleepMS, "(milliseconds)", "(_)");
