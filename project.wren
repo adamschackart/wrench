@@ -331,6 +331,10 @@ class Project {
         _extraObjects = _project != null ? _project.extraObjects.toList : []
         _libraries = _project != null ? _project.libraries.toList : []
         _build32bit = _project != null ? _project.build32bit : false
+        _addressSanitizer = _project != null ? _project.addressSanitizer : false
+        _threadSanitizer = _project != null ? _project.threadSanitizer : false
+        _undefinedBehaviorSanitizer = _project != null ? _project.undefinedBehaviorSanitizer : false
+        _integerSanitizer = _project != null ? _project.integerSanitizer : false
         _async = _project != null ? _project.async : false
         _enableRTTI = _project != null ? _project.enableRTTI : false
         _enableExceptions = _project != null ? _project.enableExceptions : true
@@ -458,10 +462,17 @@ class Project {
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
-    // TODO: addressSanitizer
-    // TODO: threadSanitizer
-    // TODO: undefinedBehaviorSanitizer
-    // TODO: integerSanitizer
+    addressSanitizer { _addressSanitizer }
+    addressSanitizer=(value) { _addressSanitizer = value }
+
+    threadSanitizer { _threadSanitizer }
+    threadSanitizer=(value) { _threadSanitizer = value }
+
+    undefinedBehaviorSanitizer { _undefinedBehaviorSanitizer }
+    undefinedBehaviorSanitizer=(value) { _undefinedBehaviorSanitizer = value }
+
+    integerSanitizer { _integerSanitizer }
+    integerSanitizer=(value) { _integerSanitizer = value }
 
     warningLevel { _warningLevel }
     warningLevel=(value) { _warningLevel = value }
@@ -615,6 +626,20 @@ class Project {
 
         node.build32bit = config.getBool("build-32bit", node.build32bit)
         node.build64bit = config.getBool("build-64bit", node.build64bit)
+
+        node.addressSanitizer = config.getBool("address-sanitizer", node.addressSanitizer)
+        node.addressSanitizer = config.getBool("asan", node.addressSanitizer)
+
+        node.threadSanitizer = config.getBool("thread-sanitizer", node.threadSanitizer)
+        node.threadSanitizer = config.getBool("tsan", node.threadSanitizer)
+
+        node.undefinedBehaviorSanitizer = config.getBool("undefined-behavior-sanitizer", node.undefinedBehaviorSanitizer)
+        node.undefinedBehaviorSanitizer = config.getBool("ub-sanitizer", node.undefinedBehaviorSanitizer)
+        node.undefinedBehaviorSanitizer = config.getBool("ubsan", node.undefinedBehaviorSanitizer)
+
+        node.integerSanitizer = config.getBool("integer-sanitizer", node.integerSanitizer)
+        node.integerSanitizer = config.getBool("int-sanitizer", node.integerSanitizer)
+        node.integerSanitizer = config.getBool("isan", node.integerSanitizer)
 
         // TODO: sources=A,B,C
         // TODO: include-paths=A,B,C
@@ -858,6 +883,10 @@ class NativeNode {
         _extraObjects = _project.extraObjects.toList
         _libraries = _project.libraries.toList
         _build32bit = _project.build32bit
+        _addressSanitizer = _project.addressSanitizer
+        _threadSanitizer = _project.threadSanitizer
+        _undefinedBehaviorSanitizer = _project.undefinedBehaviorSanitizer
+        _integerSanitizer = _project.integerSanitizer
         _async = _project.async
         _maxAsyncCompileJobs = _project.maxAsyncCompileJobs
         _optimizeForCodeSize = _project.optimizeForCodeSize
@@ -1076,10 +1105,17 @@ class NativeNode {
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
-    // TODO: addressSanitizer
-    // TODO: threadSanitizer
-    // TODO: undefinedBehaviorSanitizer
-    // TODO: integerSanitizer
+    addressSanitizer { _addressSanitizer }
+    addressSanitizer=(value) { _addressSanitizer = value }
+
+    threadSanitizer { _threadSanitizer }
+    threadSanitizer=(value) { _threadSanitizer = value }
+
+    undefinedBehaviorSanitizer { _undefinedBehaviorSanitizer }
+    undefinedBehaviorSanitizer=(value) { _undefinedBehaviorSanitizer = value }
+
+    integerSanitizer { _integerSanitizer }
+    integerSanitizer=(value) { _integerSanitizer = value }
 
     warningLevel { _warningLevel }
     warningLevel=(value) { _warningLevel = value }
@@ -1683,6 +1719,50 @@ class NativeNode {
         }
     }
 
+    compilerSanitizerFlags_ {
+        var s = []
+
+        if (compiler == "cl") {
+            if (addressSanitizer) {
+                s.add("/fsanitize=address")
+            }
+
+            if (threadSanitizer) {
+                Fiber.abort("TODO")
+            }
+
+            if (undefinedBehaviorSanitizer) {
+                Fiber.abort("TODO")
+            }
+
+            if (integerSanitizer) {
+                Fiber.abort("TODO")
+            }
+        } else {
+            if (addressSanitizer) {
+                s.add("-fsanitize=address")
+            }
+
+            if (threadSanitizer) {
+                s.add("-fsanitize=thread")
+            }
+
+            if (undefinedBehaviorSanitizer) {
+                s.add("-fsanitize=undefined")
+            }
+
+            if (integerSanitizer) {
+                s.add("-fsanitize=integer")
+            }
+        }
+
+        if (s.isEmpty) {
+            return ""
+        } else {
+            return s.join(" ") + " "
+        }
+    }
+
     compilerExtraFlags_ {
         var s = extraCompilerFlags.join(" ")
 
@@ -1709,6 +1789,7 @@ class NativeNode {
                     compilerUndefines_ +
                     compilerWarningFlags_ +
                     compilerPlatformFlags_ +
+                    compilerSanitizerFlags_ +
                     compilerExtraFlags_ +
                     filename +
                     compilerLibraries_ +
@@ -1798,6 +1879,14 @@ class NativeNode {
         } else {
             return s.join(" ") + " "
         }
+    }
+
+    linkerSanitizerFlags_ {
+        if (isStaticLibrary) {
+            return ""
+        }
+
+        return compilerSanitizerFlags_
     }
 
     linkerExtraFlags_ {
@@ -2017,6 +2106,7 @@ class NativeNode {
     linkerCommandLine_ {
         var data = (linkerName_ +
                     linkerPlatformFlags_ +
+                    linkerSanitizerFlags_ +
                     linkerExtraFlags_ +
                     linkerOutput_ +
                     linkerObjects_ +
