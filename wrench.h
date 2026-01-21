@@ -632,6 +632,14 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #include <unistd.h>
 #endif
 
+#if WRENCH_USE_STB_SPRINTF && !defined(STB_SPRINTF_IMPLEMENTATION)
+    /*
+     * Faster than MSVCRT/glibc.
+     */
+    #define STB_SPRINTF_IMPLEMENTATION
+    #include <stb/stb_sprintf.h>
+#endif
+
 /* TODO: Some of these #defines are vestigial.
  */
 #if !defined(wrench_alloca)
@@ -665,6 +673,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_fopen
 #define wrench_fopen fopen
 #endif
+/*
+ * TODO: Use stbsp_vsprintfcb if WRENCH_USE_STB_SPRINTF.
+ */
 #ifndef wrench_fprintf
 #define wrench_fprintf fprintf
 #endif
@@ -692,8 +703,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_getc
 #define wrench_getc getc
 #endif
-#ifndef wrench_getenv
-#define wrench_getenv getenv
+#if!defined(wrench_getenv)
+    #if _GNU_SOURCE
+        #define wrench_getenv secure_getenv
+    #else
+        #define wrench_getenv getenv
+    #endif
 #endif
 #ifndef wrench_gettimeofday
 #define wrench_gettimeofday gettimeofday
@@ -744,8 +759,12 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_setenv
 #define wrench_setenv setenv
 #endif
-#ifndef wrench_snprintf
-#define wrench_snprintf snprintf
+#if !defined(wrench_snprintf)
+    #if defined(STB_SPRINTF_H_INCLUDE)
+        #define wrench_snprintf stbsp_snprintf
+    #else
+        #define wrench_snprintf snprintf
+    #endif
 #endif
 #ifndef wrench_stat
 #define wrench_stat stat
@@ -814,6 +833,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_strlen
 #define wrench_strlen strlen
+#endif
+#ifndef wrench_strncmp
+#define wrench_strncmp strncmp
 #endif
 #ifndef wrench_strstr
 #define wrench_strstr strstr
@@ -1902,6 +1924,11 @@ static const char* wrenchLoadSourceFile(WrenchContext* context, const char* name
         return NULL;
     }
 
+    if (wrench_strncmp(name, ".\\", 2) == 0 || wrench_strncmp(name, "./", 2) == 0)
+    {
+        name += 2;
+    }
+
     if (wrench_strstr(name, ".wren") != NULL) // Strip file extension.
     {
         char b[1024], *src = (char*)name, *dst = b;
@@ -2506,7 +2533,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->vm = vm;
 
     #ifndef WRENCH_NODE_BUFFER_SIZE
-    #define WRENCH_NODE_BUFFER_SIZE (1024 * 1024 * 2)
+    #define WRENCH_NODE_BUFFER_SIZE (1024 * 1024 * 1)
     #endif
     context->node_alloc_base = (char*)wrench_malloc(WRENCH_NODE_BUFFER_SIZE);
 
@@ -2520,7 +2547,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     context->node_alloc_mark = context->node_alloc_base;
 
     #ifndef WRENCH_SOURCE_CODE_BUFFER_SIZE
-    #define WRENCH_SOURCE_CODE_BUFFER_SIZE (1024 * 1024 * 2)
+    #define WRENCH_SOURCE_CODE_BUFFER_SIZE (1024 * 1024 * 1)
     #endif
     context->source_code_alloc_base = (char*)wrench_malloc(WRENCH_SOURCE_CODE_BUFFER_SIZE);
 
@@ -2539,7 +2566,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     #define WRENCH_MEMORY_POOL_BLOCK_SIZE 64
     #endif
     #ifndef WRENCH_MEMORY_POOL_BLOCK_COUNT
-    #define WRENCH_MEMORY_POOL_BLOCK_COUNT ((1024 * 1024 * 2) / (WRENCH_MEMORY_POOL_BLOCK_SIZE))
+    #define WRENCH_MEMORY_POOL_BLOCK_COUNT ((1024 * 1024 * 1) / (WRENCH_MEMORY_POOL_BLOCK_SIZE))
     #endif
 
     if (!wrenchMemoryPoolInit(&context->memory_pool, WRENCH_MEMORY_POOL_BLOCK_SIZE, WRENCH_MEMORY_POOL_BLOCK_COUNT))
@@ -2552,7 +2579,7 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
     }
 
     #ifndef WRENCH_STACK_BUFFER_SIZE
-    #define WRENCH_STACK_BUFFER_SIZE (1024 * 1024 * 2)
+    #define WRENCH_STACK_BUFFER_SIZE (1024 * 1024 * 1)
     #endif
     context->stack_alloc_base = (char*)wrench_malloc(WRENCH_STACK_BUFFER_SIZE);
 

@@ -139,6 +139,77 @@ static void file_Path_isFile(WrenVM* vm)
     wrenSetSlotBool(vm, 0, file_Path_isFile_impl(wrenGetSlotString(vm, 1)));
 }
 
+static void file_Path_temp(WrenVM* vm)
+{
+    #if _WIN32
+    {
+        char buffer[1024 * 4];
+
+    #if 0
+        if (GetTempPath2A(sizeof(buffer) - 1, buffer) == 0)
+    #else
+        if (GetTempPathA(sizeof(buffer) - 1, buffer) == 0)
+    #endif
+        {
+            /* TODO: win32 error string function that calls/interprets GetLastError().
+             */
+            wrenSetSlotString(vm, 0, "GetTempPath failed");
+            wrenAbortFiber(vm, 0);
+        }
+        else
+        {
+            wrenSetSlotString(vm, 0, (const char*)buffer);
+        }
+    }
+    #else
+    {
+        /* This is what `std::filesystem::temp_directory_path` does.
+         */
+        char* path = wrench_getenv("TMPDIR");
+
+        if (path != NULL)
+        {
+            wrenSetSlotString(vm, 0, (const char*)path);
+            return;
+        }
+
+        path = wrench_getenv("TMP");
+
+        if (path != NULL)
+        {
+            wrenSetSlotString(vm, 0, (const char*)path);
+            return;
+        }
+
+        path = wrench_getenv("TEMP");
+
+        if (path != NULL)
+        {
+            wrenSetSlotString(vm, 0, (const char*)path);
+            return;
+        }
+
+        path = wrench_getenv("TEMPDIR");
+
+        if (path != NULL)
+        {
+            wrenSetSlotString(vm, 0, (const char*)path);
+            return;
+        }
+
+        #if __ANDROID__
+        {
+            wrenSetSlotString(vm, 0, "/data/local/tmp");
+        }
+        #else
+        {
+            wrenSetSlotString(vm, 0, "/tmp");
+        }
+        #endif
+    }
+    #endif
+}
+
 static void file_Path_createDirectory(WrenVM* vm)
 {
     const char* path = wrenGetSlotString(vm, 1);
@@ -1016,6 +1087,8 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             {
                 WREN_CODE("static exists(path) { isDirectory(path) || isFile(path) }");
             }
+
+            WREN_METHOD(file, Path, true, temp, "", "");
 
             // TODO: current
             // TODO: base

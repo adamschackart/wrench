@@ -22,7 +22,7 @@ static void time_Timer_sleepMS(WrenVM* vm)
     {
         Sleep(milliseconds);
     }
-    #elif _POSIX_C_SOURCE >= 199309L
+    #elif _POSIX_C_SOURCE >= 199309L || __APPLE__
     {
         struct timespec ts;
         ts.tv_sec = milliseconds / 1000;

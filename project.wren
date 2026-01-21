@@ -330,7 +330,8 @@ class Project {
         _runtimeLibraryPaths = _project != null ? _project.runtimeLibraryPaths.toList : ["."]
         _extraObjects = _project != null ? _project.extraObjects.toList : []
         _libraries = _project != null ? _project.libraries.toList : []
-        _async = _project != null ? _project.async : false // FIXME: Causes weird issues on MSVC.
+        _build32bit = _project != null ? _project.build32bit : false
+        _async = _project != null ? _project.async : false
         _enableRTTI = _project != null ? _project.enableRTTI : false
         _enableExceptions = _project != null ? _project.enableExceptions : true
         _isGUI = _project != null ? _project.isGUI : false
@@ -341,8 +342,7 @@ class Project {
         _finalizeLinkerCommandLine = _project != null ? _project.finalizeLinkerCommandLine : null
         _warningLevel = _project != null ? _project.warningLevel : 0
         _optimizeForCodeSize = _project != null ? _project.optimizeForCodeSize : true
-
-        _maxAsyncCompileJobs = _project != null ? _project.maxAsyncCompileJobs : (Platform.logicalCoreCount * 2)
+        _maxAsyncCompileJobs = _project != null ? _project.maxAsyncCompileJobs : Platform.logicalCoreCount
         _printBanners = true
 
         if (_maxAsyncCompileJobs < 1) {
@@ -446,9 +446,14 @@ class Project {
         }
     }
 
+    build32bit { _build32bit }
+    build32bit=(value) { _build32bit = value }
+
+    build64bit { !build32bit }
+    build64bit=(value) { build32bit = !value }
+
     // TODO: linkerScript (ld -T)
     // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
-    // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
 
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
@@ -568,8 +573,8 @@ class Project {
     // ===== [ private utils ] =================================================
 
     static configure_(node, config) {
-        var storeFallbacks = config.storeFallbacks
-        config.storeFallbacks = false
+        //var storeFallbacks = config.storeFallbacks
+        //config.storeFallbacks = false
 
         if (node is Project) {
             node.printBanners = config.getBool("print-banners", node.printBanners)
@@ -602,11 +607,14 @@ class Project {
         node.enableExceptions = config.getBool("enable-exceptions", node.enableExceptions)
         node.disableExceptions = config.getBool("disable-exceptions", node.disableExceptions)
 
-        node.isGUI = config.getBool("is-gui", node.isGUI)
-        node.isCLI = config.getBool("is-cli", node.isCLI)
+        node.isGUI = config.getBool("gui", node.isGUI)
+        node.isCLI = config.getBool("cli", node.isCLI)
 
         node.dynamicCRT = config.getBool("dynamic-crt", node.dynamicCRT)
         node.staticCRT = config.getBool("static-crt", node.staticCRT)
+
+        node.build32bit = config.getBool("build-32bit", node.build32bit)
+        node.build64bit = config.getBool("build-64bit", node.build64bit)
 
         // TODO: sources=A,B,C
         // TODO: include-paths=A,B,C
@@ -619,7 +627,7 @@ class Project {
         // TODO: library-paths=A,B,C
         // TODO: runtime-library-paths=A,B,C
 
-        config.storeFallbacks = storeFallbacks
+        //config.storeFallbacks = storeFallbacks
     }
 
     static isDefined_(key, list) {
@@ -700,29 +708,65 @@ class Project {
         // ===== [ 2026 ] ======================================================
 
         if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
-            Fiber.abort("TODO")
+            if (build32bit) {
+                Fiber.abort("TODO")
+            } else {
+                Fiber.abort("TODO")
+            }
+
+            return
         }
 
         if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\18\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
-            Fiber.abort("TODO")
+            if (build32bit) {
+                Fiber.abort("TODO")
+            } else {
+                Fiber.abort("TODO")
+            }
+
+            return
         }
 
         if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
-            Fiber.abort("TODO")
+            if (build32bit) {
+                Fiber.abort("TODO")
+            } else {
+                Fiber.abort("TODO")
+            }
+
+            return
         }
 
         // ===== [ 2022 ] ======================================================
 
         if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
-            Fiber.abort("TODO")
+            if (build32bit) {
+                Fiber.abort("TODO")
+            } else {
+                Fiber.abort("TODO")
+            }
+
+            return
         }
 
         if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
-            Fiber.abort("TODO")
+            if (build32bit) {
+                Fiber.abort("TODO")
+            } else {
+                Fiber.abort("TODO")
+            }
+
+            return
         }
 
         if (Path.isFile("C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvarsall.bat")) {
-            Fiber.abort("TODO")
+            if (build32bit) {
+                Fiber.abort("TODO")
+            } else {
+                Fiber.abort("TODO")
+            }
+
+            return
         }
 
         // ===== [ 2019 ] ======================================================
@@ -813,6 +857,7 @@ class NativeNode {
         _runtimeLibraryPaths = _project.runtimeLibraryPaths.toList
         _extraObjects = _project.extraObjects.toList
         _libraries = _project.libraries.toList
+        _build32bit = _project.build32bit
         _async = _project.async
         _maxAsyncCompileJobs = _project.maxAsyncCompileJobs
         _optimizeForCodeSize = _project.optimizeForCodeSize
@@ -1019,9 +1064,14 @@ class NativeNode {
         }
     }
 
+    build32bit { _build32bit }
+    build32bit=(value) { _build32bit = value }
+
+    build64bit { !build32bit }
+    build64bit=(value) { build32bit = !value }
+
     // TODO: linkerScript (ld -T)
     // TODO: noStandardLibrary (/NODEFAULTLIB, use ld, -nostartfiles, -nodefaultlibs, and/or -nostdlib etc.)
-    // TODO: build32bit (vcvars32 on MSVC, -m32 elsewhere)
 
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
@@ -1139,7 +1189,7 @@ class NativeNode {
                 System.print(commandLine)
             }
 
-            if (source.endsWith(".cpp")) {
+            if (source.endsWith(".cpp") || source.endsWith(".cc") || source.endsWith(".cxx")) {
                 haveCompiledCpp = true
             }
 
@@ -1288,15 +1338,15 @@ class NativeNode {
                 compilerName = "ml"
             }
         } else if (compilerName == "cc") {
-            if (filename.endsWith(".cpp")) {
+            if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
                 compilerName = "c++"
             }
         } else if (compilerName == "gcc") {
-            if (filename.endsWith(".cpp")) {
+            if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
                 compilerName = "g++"
             }
         } else if (compilerName == "clang") {
-            if (filename.endsWith(".cpp")) {
+            if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
                 compilerName = "clang++"
             }
         }
@@ -1587,7 +1637,17 @@ class NativeNode {
             s.add("-c")
 
             // For very large builds.
-            s.add("-gsplit-dwarf")
+            if (release) {
+                if (!Platform.isRiscV) {
+                    s.add("-gsplit-dwarf")
+                }
+            } else {
+                s.add("-gsplit-dwarf")
+
+                if (Platform.isRiscV) {
+                    s.add("-mno-relax")
+                }
+            }
 
             if (enableRTTI) {
                 s.add("-frtti")
@@ -1604,6 +1664,10 @@ class NativeNode {
             /*if (staticCRT) {
                 Fiber.abort("TODO")
             }*/
+
+            if (build32bit) {
+                s.add("-m32")
+            }
         }
 
         /* TODO: if (!noStandardLibrary)
@@ -1715,6 +1779,12 @@ class NativeNode {
             if (release && linkTimeOptimization && !isStaticLibrary) {
                 s.add("-flto")
             }
+
+            /* XXX: This might require disabling link-time optimization.
+             */
+            if (build32bit && !isStaticLibrary) {
+                s.add("-m32")
+            }
         }
 
         /* TODO: if (!noStandardLibrary)
@@ -1820,9 +1890,13 @@ class NativeNode {
 
         for (object in extraObjects) {
             /*
-             * TODO: If name has no extension, append platform object extension.
+             * NOTE: If name has no extension, append platform object extension.
              */
-            s.add(object)
+            if (object.endsWith(type.objectExtension)) {
+                s.add(object)
+            } else {
+                s.add(sourceToObject_(object))
+            }
         }
 
         return s.join(" ")
@@ -2994,6 +3068,8 @@ var main = Fn.new {
     project.includePaths.add("wren/src/include")
     project.includePaths.add("wren/src/optional")
     project.includePaths.add("wren/src/vm")
+
+    project.define("WRENCH_USE_STB_SPRINTF")
 
     if (false) {
         project.define("WREN_NAN_TAGGING", 0)

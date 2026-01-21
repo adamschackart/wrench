@@ -10,7 +10,7 @@ class Config {
     construct new() {
         _comments = {}
         _table = {}
-        _ignore = {}
+        _ignored = {}
         _storeFallbacks = true
         _allowOverride = false
     }
@@ -34,13 +34,13 @@ class Config {
         return this
     }
 
-    getIgnored(key) { _ignore.containsKey(key) }
+    getIgnored(key) { _ignored.containsKey(key) }
 
     setIgnored(key, ignored) {
         if (ignored) {
-            _ignore[key] = true
+            _ignored[key] = true
         } else {
-            _ignore.remove(key)
+            _ignored.remove(key)
         }
 
         return this
@@ -116,7 +116,7 @@ class Config {
             rhs = "true"
         }
 
-        if (_ignore.containsKey(lhs)) {
+        if (_ignored.containsKey(lhs)) {
             return
         }
 
@@ -192,4 +192,10 @@ class Config {
     }
 
     printHelp() { printHelp(File.stdout) }
+
+    /* Direct access. Use at your own risk.
+     */
+    comments { _comments }
+    table { _table }
+    ignored { _ignored }
 }

@@ -22,7 +22,11 @@
     #define realloc wrench_realloc
 
     #include <zip/src/zip.h>
+
+    #ifndef ZIP_C
+    #define ZIP_C
     #include <zip/src/zip.c>
+    #endif
 
     #undef calloc
     #undef free
@@ -47,14 +51,51 @@
 --------------------------------------------------------------------------------
 */
 
+#if defined(ZIP_C) && 0
+    #define wrench_crc32 mz_crc32
+#else
+    static uint32_t wrench_crc32(uint32_t crc, const uint8_t* data, size_t size)
+    {
+        static uint32_t crc_table[256];
+
+        if (crc_table[1] == 0)
+        {
+            for (uint32_t i = 0; i < 256; i++)
+            {
+                uint32_t s, j;
+
+                for (s = i, j = 0; j < 8; j++)
+                {
+                    s = (s >> 1) ^ (s & 1 ? 0xedb88320 : 0);
+                }
+
+                crc_table[i] = s;
+            }
+        }
+
+        // Initial mixing step.
+        crc = ~crc;
+
+        for (size_t i = 0; i < size; i++)
+        {
+            crc = (crc >> 8) ^ crc_table[data[i] ^ (crc & 0xff)];
+        }
+
+        // Final mixing step.
+        crc = ~crc;
+
+        return crc;
+    }
+#endif
+
 static void zip_CRC32_call(WrenVM* vm)
 {
     int crc = wrenGetSlotInt(vm, 1);
 
     int size;
-    const mz_uint8* data = (const mz_uint8*)wrenGetSlotBytes(vm, 2, &size);
+    const uint8_t* data = (const uint8_t*)wrenGetSlotBytes(vm, 2, &size);
 
-    wrenSetSlotInt(vm, 0, (int)mz_crc32(crc, data, size));
+    wrenSetSlotUnsignedInt(vm, 0, wrench_crc32(crc, data, size));
 }
 
 /*
@@ -317,7 +358,7 @@ static void zip_Archive_readEntry(WrenVM* vm)
     if (checksum)
     {
         const unsigned int expected_checksum = zip_entry_crc32(self->zip);
-        const unsigned int computed_checksum = mz_crc32(0, (const mz_uint8*)data, size);
+        const unsigned int computed_checksum = wrench_crc32(0, (const uint8_t*)data, size);
 
         if (expected_checksum != computed_checksum)
         {

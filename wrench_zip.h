@@ -12,6 +12,7 @@ struct zip_t;
 
 WRENCH_STRUCT_HEADER(zip, Archive)
     struct zip_t* zip;
+    // TODO: bool collect
 WRENCH_STRUCT_FOOTER(zip, Archive)
 
 #endif /* __WRENCH_ZIP_H__ */
