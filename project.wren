@@ -37,7 +37,18 @@ class Util {
     /* Modifies wren.c with performance improvements and some extra functionality.
      */
     static patchWrenAmalgamation(filename, data) {
-        if (filename == "wren/src/vm/wren_core.c") {
+        if (filename == "wren/src/vm/wren_compiler.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Replace `(v)sprintf`.
+             */
+            data = data.replace("sprintf(message,", "snprintf(message, sizeof(message),")
+            data = data.replace("vsprintf(message + length,", "vsnprintf(message + length, sizeof(message) - length,")
+            data = data.replace("sprintf(label,", "snprintf(label, sizeof(label),")
+            data = data.replace("sprintf(fullSignatureWithPrefix,", "snprintf(fullSignatureWithPrefix, sizeof(fullSignatureWithPrefix),")
+        } else if (filename == "wren/src/vm/wren_core.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
             }
@@ -252,6 +263,10 @@ class Util {
 
             data = data.replace("hashNumber(fn->arity) ^ hashNumber(fn->code.count)", "hashTwoNumbers(fn->arity, fn->code.count)")
             data = data.replace("hashNumber(range->from) ^ hashNumber(range->to)", "hashTwoNumbers(range->from, range->to)")
+
+            /* Replace an `sprintf`.
+             */
+            data = data.replace("sprintf(buffer,", "snprintf(buffer, sizeof(buffer),")
         }
 
         return data

@@ -187,6 +187,28 @@ static void platform_Environment_index1_set(WrenVM* vm)
     }
 }
 
+static void platform_Environment_toList_(WrenVM* vm)
+{
+    wrenSetSlotNewList(vm, 0);
+
+    #if _WIN32
+    {
+        WRENCH_STUB();
+    }
+    #else
+    {
+        // Available on POSIX.
+        extern char** environ;
+
+        for (size_t i = 0; environ[i] != NULL; i++)
+        {
+            wrenSetSlotString(vm, 1, (const char*)environ[i]);
+            wrenInsertInList(vm, 0, -1, 1);
+        }
+    }
+    #endif
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -714,7 +736,26 @@ WRENCH_EXPORT bool platformWrenInit(WrenVM* vm)
         {
             WREN_INDEX_PROPERTY(platform, Environment, true, 1);
 
-            // TODO: toMap (get all environment variables).
+            /* XXX: Reserving slots is buggy.
+             */
+            WREN_METHOD(platform, Environment, true, toList_, "(unused)", "(_)");
+            WREN_CODE("static toList { toList_(null) }");
+
+            if (!wrenCode(vm,
+
+            "static toMap {\n"
+                "var env = toList\n"
+                "var map = {}\n"
+
+                "for (item in env) {\n"
+                    "var s = item.split(\"=\")\n"
+                    "map[s[0]] = s[1]\n"
+                "}\n"
+
+                "return map\n"
+            "}\n"
+
+            )) { return false; }
         }
         WREN_END_CLASS();
 
