@@ -394,6 +394,12 @@ while (0)
     #endif
 #endif /* WRENCH_DEBUG */
 
+/* Magic tag for the internal VM structure. Have another coffee!
+ */
+#ifndef WRENCH_MAGIC_TAG
+#define WRENCH_MAGIC_TAG 0xDECAFBAD
+#endif
+
 #ifndef WRENCH_STRUCT_HEADER
 #define WRENCH_STRUCT_HEADER(module_name, class_name)   \
                                                         \
@@ -713,6 +719,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_gettimeofday
 #define wrench_gettimeofday gettimeofday
 #endif
+#ifndef wrench_gmtime
+#define wrench_gmtime gmtime
+#endif
 #ifndef wrench_localtime
 #define wrench_localtime localtime
 #endif
@@ -963,18 +972,22 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #endif
 #endif /* !wrench_breakpoint */
 
-#ifndef wrench_assert
-#define wrench_assert(cnd, ...) if ((cnd) == 0)                                                     \
-{                                                                                                   \
-    wrench_fprintf(wrench_stderr, "assert \"%s\" failed in func \"%s\" (file \"%s\", line %i): ",   \
-                                        WRENCH_STRINGIFY(cnd), __FUNCTION__, __FILE__, __LINE__);   \
-                                                                                                    \
-    wrench_fprintf(wrench_stderr, __VA_ARGS__);                                                     \
-    wrench_fprintf(wrench_stderr, "\n");                                                            \
-                                                                                                    \
-    wrench_breakpoint();                                                                            \
-}
-#endif /* wrench_assert */
+#if !defined(wrench_assert)
+    #if WRENCH_DEBUG
+        #define wrench_assert(cnd, ...) if ((cnd) == 0)                                                     \
+        {                                                                                                   \
+            wrench_fprintf(wrench_stderr, "assert \"%s\" failed in func \"%s\" (file \"%s\", line %i): ",   \
+                                                WRENCH_STRINGIFY(cnd), __FUNCTION__, __FILE__, __LINE__);   \
+                                                                                                            \
+            wrench_fprintf(wrench_stderr, __VA_ARGS__);                                                     \
+            wrench_fprintf(wrench_stderr, "\n");                                                            \
+                                                                                                            \
+            wrench_breakpoint();                                                                            \
+        }
+    #else
+        #define wrench_assert(cnd, ...) // ((void)sizeof(cnd))
+    #endif
+#endif /* !wrench_assert */
 
 static int wrench_int_min(int a, int b)
 {
@@ -1166,6 +1179,10 @@ WrenchModule;
 
 typedef struct WrenchContext
 {
+    #if WRENCH_DEBUG
+    uint32_t magic;
+    #endif
+
     /* TODO: Order struct members based on frequency of use + minimizing padding.
      */
     struct WrenchContext* prev;
@@ -2538,6 +2555,12 @@ static WrenchContext* wrenchNewContext(WrenVM* vm)
         return NULL;
     }
 
+    #if WRENCH_DEBUG
+    {
+        context->magic = WRENCH_MAGIC_TAG;
+    }
+    #endif /* WRENCH_DEBUG */
+
     // For Wren calls.
     context->vm = vm;
 
@@ -3018,6 +3041,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     // Release the standard library handles we keep for performance boosts.
     if (context->FltVector_handle != NULL)
@@ -3134,6 +3158,7 @@ WRENCH_IMPL(bool, GetForeignLibraryLoadEnabled, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetForeignLibraryLoadEnabled(context);
     }
@@ -3152,6 +3177,7 @@ WRENCH_IMPL(void, SetForeignLibraryLoadEnabled, (WrenVM* vm, bool enabled))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetForeignLibraryLoadEnabled(context, enabled);
 }
@@ -3162,6 +3188,7 @@ WRENCH_IMPL(bool, GetWrenLibraryLoadEnabled, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetWrenLibraryLoadEnabled(context);
     }
@@ -3180,6 +3207,7 @@ WRENCH_IMPL(void, SetWrenLibraryLoadEnabled, (WrenVM* vm, bool enabled))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetWrenLibraryLoadEnabled(context, enabled);
 }
@@ -3190,6 +3218,7 @@ WRENCH_IMPL(FILE*, GetOutputFile, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetOutputFile(context);
     }
@@ -3208,6 +3237,7 @@ WRENCH_IMPL(void, SetOutputFile, (WrenVM* vm, FILE* file))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetOutputFile(context, file);
 }
@@ -3218,6 +3248,7 @@ WRENCH_IMPL(const char*, GetErrorString, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetErrorString(context);
     }
@@ -3236,6 +3267,7 @@ WRENCH_IMPL(void, SetErrorString, (WrenVM* vm, const char* error))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetErrorString(context, error);
 }
@@ -3246,6 +3278,7 @@ WRENCH_IMPL(void*, GetUserDataEx, (WrenVM* vm, int slot))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetUserDataEx(context, slot);
     }
@@ -3264,6 +3297,7 @@ WRENCH_IMPL(void, SetUserDataEx, (WrenVM* vm, int slot, void* userData))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetUserDataEx(context, slot, userData);
 }
@@ -3274,6 +3308,7 @@ WRENCH_IMPL(char**, GetCommandLine, (WrenVM* vm, int* argc))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetCommandLine(context, argc);
     }
@@ -3294,6 +3329,7 @@ WRENCH_IMPL(bool, SetCommandLine, (WrenVM* vm, int argc, char** argv))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchSetCommandLine(context, argc, argv);
     }
@@ -3309,6 +3345,7 @@ WRENCH_IMPL(const char*, GetModuleSource, (WrenVM* vm, const char* name))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetModuleSource(context, name);
     }
@@ -3324,6 +3361,7 @@ WRENCH_IMPL(int, PrintModuleSource, (WrenVM* vm, const char* name, FILE* stream,
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchPrintModuleSource(context, name, stream, indent, strip_comments);
     }
@@ -3339,6 +3377,7 @@ WRENCH_IMPL(const char*, GetBasePath, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetBasePath(context);
     }
@@ -3354,6 +3393,7 @@ WRENCH_IMPL(bool, SetBasePath, (WrenVM* vm, const char* path))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchSetBasePath(context, path);
     }
@@ -3369,6 +3409,7 @@ WRENCH_IMPL(wrenFileReadFn, GetFileReadCallback, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetFileReadCallback(context);
     }
@@ -3387,6 +3428,7 @@ WRENCH_IMPL(void, SetFileReadCallback, (WrenVM* vm, wrenFileReadFn callback))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetFileReadCallback(context, callback);
 }
@@ -3397,6 +3439,7 @@ WRENCH_IMPL(wrenFileFreeFn, GetFileFreeCallback, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchGetFileFreeCallback(context);
     }
@@ -3415,6 +3458,7 @@ WRENCH_IMPL(void, SetFileFreeCallback, (WrenVM* vm, wrenFileFreeFn callback))
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchSetFileFreeCallback(context, callback);
 }
@@ -3500,6 +3544,7 @@ WRENCH_IMPL(void*, StackMalloc, (WrenVM* vm, size_t size))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchStackMalloc(context, size);
     }
@@ -3515,6 +3560,7 @@ WRENCH_IMPL(void*, StackCalloc, (WrenVM* vm, size_t num, size_t size))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchStackCalloc(context, num, size);
     }
@@ -3530,6 +3576,7 @@ WRENCH_IMPL(void*, StackRealloc, (WrenVM* vm, void* ptr, size_t size))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchStackRealloc(context, ptr, size);
     }
@@ -3545,6 +3592,7 @@ WRENCH_IMPL(char*, StackStringCopy, (WrenVM* vm, const char* str, size_t* length
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchStackStringCopy(context, str, length);
     }
@@ -3565,6 +3613,7 @@ WRENCH_IMPL(void, StackFree, (WrenVM* vm, void* ptr, size_t size))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         wrenchStackFree(context, ptr, size);
     }
@@ -3576,6 +3625,7 @@ WRENCH_IMPL(bool, IsStackMemory, (WrenVM* vm, void* ptr))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchIsStackMemory(context, ptr);
     }
@@ -3591,6 +3641,7 @@ WRENCH_IMPL(const char*, LoadSourceFile, (WrenVM* vm, const char* name, size_t* 
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchLoadSourceFile(context, name, num_chars);
     }
@@ -3606,6 +3657,7 @@ WRENCH_IMPL(bool, BeginModule, (WrenVM* vm, const char* moduleName))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchBeginModule(context, moduleName);
     }
@@ -3621,6 +3673,7 @@ WRENCH_IMPL(bool, CodeEx, (WrenVM* vm, const char* source, size_t num_chars))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchCodeEx(context, source, num_chars);
     }
@@ -3636,6 +3689,7 @@ WRENCH_IMPL(bool, Code, (WrenVM* vm, const char* source))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchCode(context, source);
     }
@@ -3651,6 +3705,7 @@ WRENCH_IMPL(bool, EndModule, (WrenVM* vm))
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchEndModule(context);
     }
@@ -3666,6 +3721,7 @@ WRENCH_IMPL(bool, RegisterModuleEx, (WrenVM* vm, const char* moduleName, const c
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchRegisterModuleEx(context, moduleName, source, num_chars, copy_source);
     }
@@ -3681,6 +3737,7 @@ WRENCH_IMPL(bool, RegisterModule, (WrenVM* vm, const char* moduleName, const cha
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchRegisterModule(context, moduleName, source);
     }
@@ -3696,6 +3753,7 @@ WRENCH_IMPL(bool, RegisterClass, (WrenVM* vm, const char* moduleName, const char
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchRegisterClass(context, moduleName, className, ctor, dtor);
     }
@@ -3711,6 +3769,7 @@ WRENCH_IMPL(bool, RegisterMethod, (WrenVM* vm, const char* moduleName, const cha
     {
         WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
         wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
         return wrenchRegisterMethod(context, moduleName, className, isStatic, signature, method);
     }
@@ -3741,6 +3800,10 @@ WRENCH_IMPL(void, SetPrimaryVM, (WrenVM* vm))
     if (vm != NULL)
     {
         wrench_primary_context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(wrench_primary_context != NULL, "");
+
+        // Ensure this is a valid Wrench VM.
+        wrench_assert(wrench_primary_context->magic == WRENCH_MAGIC_TAG, "");
     }
     else
     {
@@ -3772,6 +3835,7 @@ WRENCH_IMPL(void, ForEachModule, (WrenVM* vm, void (*func)(WrenVM* vm, const cha
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchForEachModule(context, func, data);
 }
@@ -3786,6 +3850,7 @@ WRENCH_IMPL(void, ForEachClassInModule, (WrenVM* vm, const char* moduleName, voi
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchForEachClassInModule(context, moduleName, func, data);
 }
@@ -3800,6 +3865,7 @@ WRENCH_IMPL(void, ForEachMethodInClass, (WrenVM* vm, const char* moduleName, con
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     wrenchForEachMethodInClass(context, moduleName, className, func, data);
 }
@@ -4023,6 +4089,7 @@ WRENCH_IMPL(WrenLoadModuleResult, DefaultLoadModule, (WrenVM* vm, const char* na
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     if (!wrenchGetWrenLibraryLoadEnabled(context))
     {
@@ -4107,6 +4174,7 @@ WRENCH_IMPL(WrenForeignMethodFn, DefaultBindForeignMethod, (WrenVM* vm, const ch
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     WrenchModule* previous_module;
     WrenchModule* module = wrenchGetModule(context, moduleName, &previous_module);
@@ -4158,6 +4226,7 @@ WRENCH_IMPL(WrenForeignClassMethods, DefaultBindForeignClass, (WrenVM* vm, const
 
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
+    wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
 
     WrenchModule* module = wrenchGetModule(context, moduleName, NULL);
     wrench_assert(module != NULL, "%s %s", moduleName, className);
