@@ -193,7 +193,20 @@ static void platform_Environment_toList_(WrenVM* vm)
 
     #if _WIN32
     {
-        WRENCH_STUB();
+        char *_env = GetEnvironmentStringsA(), *env = _env;
+
+        while (*env)
+        {
+            wrenSetSlotString(vm, 1, (const char*)env);
+            wrenInsertInList(vm, 0, -1, 1);
+
+            env += wrench_strlen(env) + 1;
+        }
+
+        if (FreeEnvironmentStringsA(_env) == 0)
+        {
+            // TODO
+        }
     }
     #else
     {
@@ -810,6 +823,9 @@ WRENCH_EXPORT bool platformWrenInit(WrenVM* vm)
             "System.print(\"%(Platform.usableRAM / 1024) GB of usable RAM\")\n"
             //"System.print(\"%(Platform.cacheLineSize)-byte cache lines\")\n"
             //"System.print(\"%(Platform.pageSize / 1024) KB pages\")\n"
+
+            "System.print()\n"
+            "System.print(Environment.toList.join(\"\\n\"))\n"
         "}\n"
 
         )) { return false; }

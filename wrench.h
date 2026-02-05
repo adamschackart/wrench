@@ -394,7 +394,7 @@ while (0)
     #endif
 #endif /* WRENCH_DEBUG */
 
-/* Magic tag for the internal VM structure. Have another coffee!
+/* Magic tag for the internal VM structure. Have another 0xC0FFEE!
  */
 #ifndef WRENCH_MAGIC_TAG
 #define WRENCH_MAGIC_TAG 0xDECAFBAD
@@ -643,6 +643,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
      * Faster than MSVCRT/glibc.
      */
     #define STB_SPRINTF_IMPLEMENTATION
+    #define STB_SPRINTF_STATIC
     #include <stb/stb_sprintf.h>
 #endif
 
@@ -876,6 +877,13 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_usleep
 #define wrench_usleep usleep
 #endif
+#if !defined(wrench_vsnprintf)
+    #if defined(STB_SPRINTF_H_INCLUDE)
+        #define wrench_vsnprintf stbsp_vsnprintf
+    #else
+        #define wrench_vsnprintf vsnprintf
+    #endif
+#endif
 
 /* ===== [ utilities ] ====================================================== */
 
@@ -985,7 +993,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
             wrench_breakpoint();                                                                            \
         }
     #else
-        #define wrench_assert(cnd, ...) // ((void)sizeof(cnd))
+        #define wrench_assert(cnd, ...) ((void)sizeof(cnd))
     #endif
 #endif /* !wrench_assert */
 
@@ -1179,7 +1187,9 @@ WrenchModule;
 
 typedef struct WrenchContext
 {
-    #if WRENCH_DEBUG
+    /* XXX: Must always be present due to assert possibly compiling conditional.
+     */
+    #if WRENCH_DEBUG || 1
     uint32_t magic;
     #endif
 

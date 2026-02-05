@@ -642,6 +642,78 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
             }
         }
         WREN_END_CLASS();
+
+        if (!wrenCode(vm,
+
+        "class Set is Sequence {\n"
+            "construct new() {\n"
+                "_map = {}\n"
+            "}\n"
+
+            "iterate(iterator) {\n"
+                "return _map.keys.iterate(iterator)\n"
+            "}\n"
+
+            "iteratorValue(iterator) {\n"
+                "return _map.keys.iteratorValue(iterator)\n"
+            "}\n"
+
+            "clear() {\n"
+                "_map.clear()\n"
+            "}\n"
+
+            "contains(value) {\n"
+                "return _map[value] != null\n"
+            "}\n"
+
+            "has(value) {\n"
+                "return _map[value] != null\n"
+            "}\n"
+
+            "count {\n"
+                "return _map.count\n"
+            "}\n"
+
+            "toList {\n"
+                "return _map.keys.toList\n"
+            "}\n"
+
+            "add(value) {\n"
+                "_map[value] = true\n"
+                "return value\n"
+            "}\n"
+
+            "remove(value) {\n"
+                "return _map.remove(value) != null ? value : null\n"
+            "}\n"
+
+            "discard(value) {\n"
+                "return _map.remove(value) != null ? value : null\n"
+            "}\n"
+
+            "pop() {\n"
+                "if (_map.count) {\n"
+                    "return _map.remove(_map.keys[0])\n"
+                "} else {\n"
+                    "return null\n"
+                "}\n"
+            "}\n"
+
+            // TODO: isDisjoint(other)
+            // TODO: isSubSet(other)
+            // TODO: isSuperSet(other)
+            // TODO: union(other)
+            // TODO: intersection(other)
+            // TODO: difference(other)
+            // TODO: symmetricDifference(other)
+            // TODO: copy
+            // TODO: update(others)
+            // TODO: intersectionUpdate(others)
+            // TODO: differenceUpdate(others)
+            // TODO: symmetricDifferenceUpdate(others)
+        "}\n"
+
+        )) { return false; }
     }
 
     if (!utilWrenInitEx(vm))

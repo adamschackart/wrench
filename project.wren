@@ -44,10 +44,35 @@ class Util {
 
             /* Replace `(v)sprintf`.
              */
-            data = data.replace("sprintf(message,", "snprintf(message, sizeof(message),")
-            data = data.replace("vsprintf(message + length,", "vsnprintf(message + length, sizeof(message) - length,")
-            data = data.replace("sprintf(label,", "snprintf(label, sizeof(label),")
-            data = data.replace("sprintf(fullSignatureWithPrefix,", "snprintf(fullSignatureWithPrefix, sizeof(fullSignatureWithPrefix),")
+            data = [
+                "#if WRENCH_USE_STB_SPRINTF && !defined(STB_SPRINTF_IMPLEMENTATION)",
+                "    #define STB_SPRINTF_IMPLEMENTATION",
+                "    #define STB_SPRINTF_STATIC",
+                "    #include <stb/stb_sprintf.h>",
+                "#endif",
+                "",
+                "#if !defined(wrench_snprintf)",
+                "    #if defined(STB_SPRINTF_H_INCLUDE)",
+                "        #define wrench_snprintf stbsp_snprintf",
+                "    #else",
+                "        #define wrench_snprintf snprintf",
+                "    #endif",
+                "#endif",
+                "",
+                "#if !defined(wrench_vsnprintf)",
+                "    #if defined(STB_SPRINTF_H_INCLUDE)",
+                "        #define wrench_vsnprintf stbsp_vsnprintf",
+                "    #else",
+                "        #define wrench_vsnprintf vsnprintf",
+                "    #endif",
+                "#endif",
+                "\n",
+            ].join("\n") + data
+
+            data = data.replace("sprintf(message,", "wrench_snprintf(message, sizeof(message),")
+            data = data.replace("vsprintf(message + length,", "wrench_vsnprintf(message + length, sizeof(message) - length,")
+            data = data.replace("sprintf(label,", "wrench_snprintf(label, sizeof(label),")
+            data = data.replace("sprintf(fullSignatureWithPrefix,", "wrench_snprintf(fullSignatureWithPrefix, sizeof(fullSignatureWithPrefix),")
         } else if (filename == "wren/src/vm/wren_core.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
@@ -266,7 +291,7 @@ class Util {
 
             /* Replace an `sprintf`.
              */
-            data = data.replace("sprintf(buffer,", "snprintf(buffer, sizeof(buffer),")
+            data = data.replace("sprintf(buffer,", "wrench_snprintf(buffer, sizeof(buffer),")
         }
 
         return data
@@ -477,6 +502,8 @@ class Project {
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
+    // TODO: precompiledHeaders
+
     addressSanitizer { _addressSanitizer }
     addressSanitizer=(value) { _addressSanitizer = value }
 
@@ -622,7 +649,10 @@ class Project {
         node.quiet = config.getBool("quiet", node.quiet)
 
         node.optimizeForCodeSize = config.getBool("optimize-for-code-size", node.optimizeForCodeSize)
+        node.optimizeForCodeSize = config.getBool("optimize-for-size", node.optimizeForCodeSize)
+
         node.optimizeForPerformance = config.getBool("optimize-for-performance", node.optimizeForPerformance)
+        node.optimizeForPerformance = config.getBool("optimize-for-speed", node.optimizeForPerformance)
 
         node.async = config.getBool("async", node.async)
         node.blocking = config.getBool("blocking", node.blocking)
@@ -973,6 +1003,8 @@ class NativeNode {
                 mode == "o")
     }
 
+    // TODO: isPrecompiledHeader
+
     static executableExtension {
         if (Platform.isWindows) {
             return ".exe"
@@ -1119,6 +1151,8 @@ class NativeNode {
 
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
+
+    // TODO: precompiledHeaders
 
     addressSanitizer { _addressSanitizer }
     addressSanitizer=(value) { _addressSanitizer = value }

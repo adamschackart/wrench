@@ -27,6 +27,7 @@
     #define STBI_FAILURE_USERMSG 1
 
     #define STB_IMAGE_IMPLEMENTATION 1
+    #define STB_IMAGE_STATIC 1
     #include <stb/stb_image.h>
 #endif
 
@@ -39,6 +40,7 @@
     #define STBIW_MEMMOVE wrench_memmove
 
     #define STB_IMAGE_WRITE_IMPLEMENTATION 1
+    #define STB_IMAGE_WRITE_STATIC 1
     #include <stb/stb_image_write.h>
 #endif
 
@@ -49,6 +51,7 @@
     #define STBIR_FREE wrench_free
 
     #define STB_IMAGE_RESIZE2_IMPLEMENTATION 1
+    #define STB_IMAGE_RESIZE_STATIC 1
     #include <stb/stb_image_resize2.h>
 #endif
 
