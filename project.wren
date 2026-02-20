@@ -292,6 +292,22 @@ class Util {
             /* Replace an `sprintf`.
              */
             data = data.replace("sprintf(buffer,", "wrench_snprintf(buffer, sizeof(buffer),")
+        } else if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Stack overflow protection.
+             */
+            data = data.replace("      // If the class's method table doesn't include the symbol, bail.",
+            [
+                "      if (fiber->numFrames >= 128) {",
+                "        fiber->error = wrenNewString(vm, \"Stack overflow!\");",
+                "        RUNTIME_ERROR();",
+                "      }",
+                "",
+                "      // If the class's method table doesn't include the symbol, bail."
+            ].join("\n"))
         }
 
         return data

@@ -187,6 +187,14 @@ static void platform_Environment_index1_set(WrenVM* vm)
     }
 }
 
+#if !_WIN32
+    #if defined(__cplusplus)
+        extern "C" char** environ;
+    #else
+        extern char** environ;
+    #endif
+#endif /* !_WIN32 */
+
 static void platform_Environment_toList_(WrenVM* vm)
 {
     wrenSetSlotNewList(vm, 0);
@@ -210,9 +218,6 @@ static void platform_Environment_toList_(WrenVM* vm)
     }
     #else
     {
-        // Available on POSIX.
-        extern char** environ;
-
         for (size_t i = 0; environ[i] != NULL; i++)
         {
             wrenSetSlotString(vm, 1, (const char*)environ[i]);

@@ -81,7 +81,17 @@ static bool file_Path_exists_impl(const char* path)
 }
 
 #if _WIN32
-    extern int _mkdir(const char *dirname);
+    extern // TODO: #include <direct.h>
+
+    #if defined(__cplusplus)
+    "C"
+    #endif
+
+    #if defined(_DLL)
+    __declspec(dllimport)
+    #endif
+
+    int _mkdir(const char *dirname);
 #endif
 
 static bool file_Path_createDirectory_impl(const char* path) // mkdir
