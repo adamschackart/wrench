@@ -73,10 +73,31 @@ class Util {
             data = data.replace("vsprintf(message + length,", "wrench_vsnprintf(message + length, sizeof(message) - length,")
             data = data.replace("sprintf(label,", "wrench_snprintf(label, sizeof(label),")
             data = data.replace("sprintf(fullSignatureWithPrefix,", "wrench_snprintf(fullSignatureWithPrefix, sizeof(fullSignatureWithPrefix),")
+
+            /* Fix collisions with win32 definitions.
+             */
+            data = data.replace("TokenType", "WrenTokenType")
+            data = data.replace("boolean", "emitBoolean")
         } else if (filename == "wren/src/vm/wren_core.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
             }
+
+            /* Check RHS for 0 before Num division.
+             */
+            data = data.replace("DEF_NUM_INFIX(divide,   /,  NUM)",
+            [
+                "static bool prim_num_divide(WrenVM* vm, Value* args)",
+                "{",
+                "  if (!validateNum(vm, args[1], \"Right operand\")) return false;",
+                "  if (fabs(AS_NUM(args[1])) < 0.000001)",
+                "  {",
+                "    vm->fiber->error = wrenNewString(vm, \"Division by zero!\");",
+                "    return false;",
+                "  }",
+                "  RETURN_NUM(AS_NUM(args[0]) / AS_NUM(args[1]));",
+                "}",
+            ].join("\n"))
 
             var index
             var lines = File.readLines("wren/src/vm/wren_core.wren")
@@ -310,6 +331,126 @@ class Util {
             ].join("\n"))
         }
 
+        /* Patch to enable any source file to be overridden.
+         */
+        if (filename.endsWith(".c")) {
+            var s = StringUtil.toUpper(Path.split(filename)[-1][0...-".c".count]) + "_C_DEFINED"
+            data = "#ifndef %(s)\n\n%(data)\n#define %(s) 1\n#endif\n\n"
+        }
+
+        return patchWrenAmalgamationForSymbolTableReplacement_(filename, data)
+    }
+
+    /* Enable replacement of O(n) SymbolTable. Bring your own hashtable.
+     */
+    static patchWrenAmalgamationForSymbolTableReplacement_(filename, data) {
+        if (filename == "wren/src/vm/wren_utils.h") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace([
+                "// TODO: Change this to use a map.",
+                "typedef StringBuffer SymbolTable;",
+            ].join("\n"),
+            [
+                "#ifndef WREN_SYMBOL_TABLE_DEFINED",
+                "typedef StringBuffer SymbolTable;",
+                "#endif",
+                "",
+                "// Get the total number of symbols in the table.",
+                "int wrenSymbolTableCount(SymbolTable* symbols);",
+                "",
+                "// Get symbol by index.",
+                "ObjString* wrenSymbolTableGet(SymbolTable* symbols, int index);",
+            ].join("\n"))
+        } else if (filename == "wren/src/vm/wren_utils.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace(
+                "DEFINE_BUFFER(String, ObjString*);",
+            [
+                "DEFINE_BUFFER(String, ObjString*);",
+                "",
+                "#ifndef WREN_SYMBOL_TABLE_DEFINED",
+            ].join("\n"))
+
+            data = data.replace(
+                "int wrenUtf8EncodeNumBytes(int value)",
+            [
+                "int wrenSymbolTableCount(SymbolTable* symbols)",
+                "{",
+                "  return symbols->count;",
+                "}",
+                "",
+                "ObjString* wrenSymbolTableGet(SymbolTable* symbols, int index)",
+                "{",
+                "  ASSERT(index >= 0, \"Negative symbol index.\");",
+                "  ASSERT(index < symbols->count, \"Symbol index too high.\");",
+                "",
+                "  return symbols->data[index];",
+                "}",
+                "",
+                "#endif // !WREN_SYMBOL_TABLE_DEFINED",
+                "",
+                "int wrenUtf8EncodeNumBytes(int value)",
+            ].join("\n"))
+        } else if (filename == "wren/src/vm/wren_compiler.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace(
+                "classInfo.fields.count",
+                "wrenSymbolTableCount(&classInfo.fields)")
+
+            data = data.replace(
+                "parser.module->variableNames.data[i]",
+                "wrenSymbolTableGet(&parser.module->variableNames, i)")
+        } else if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace(
+                "vm->methodNames.count",
+                "wrenSymbolTableCount(&vm->methodNames)")
+
+            data = data.replace(
+                "vm->methodNames.data[symbol]",
+                "wrenSymbolTableGet(&vm->methodNames, symbol)")
+
+            data = data.replace(
+                "coreModule->variableNames.data[i]",
+                "wrenSymbolTableGet(&coreModule->variableNames, i)")
+        } else if (filename == "wren/src/vm/wren_debug.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace(
+                "fn->module->variableNames.data[slot]",
+                "wrenSymbolTableGet(&fn->module->variableNames, slot)")
+
+            data = data.replace(
+                "vm->methodNames.data[symbol]",
+                "wrenSymbolTableGet(&vm->methodNames, symbol)")
+        } else if (filename == "wren/src/optional/wren_opt_meta.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace(
+                "module->variableNames.count",
+                "wrenSymbolTableCount(&module->variableNames)")
+
+            data = data.replace(
+                "module->variableNames.data[i]",
+                "wrenSymbolTableGet(&module->variableNames, i)")
+        }
+
         return data
     }
 
@@ -518,6 +659,7 @@ class Project {
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
+    // TODO: bufferGuard (-fstack-protector on Clang/GCC, /GS and/or /RTCs on MSVC)
     // TODO: precompiledHeaders
 
     addressSanitizer { _addressSanitizer }
@@ -1168,6 +1310,7 @@ class NativeNode {
     // TODO: extraCompilerFlagsPerFile ({ filename : flags })
     // TODO: extraLinkerFlagsPerFile ({ filename : flags })
 
+    // TODO: bufferGuard (-fstack-protector on Clang/GCC, /GS and/or /RTCs on MSVC)
     // TODO: precompiledHeaders
 
     addressSanitizer { _addressSanitizer }
@@ -1403,12 +1546,14 @@ class NativeNode {
                 Path.tryRemove(name + ".dll")
                 Path.tryRemove(name + ".lib")
             } else {
+                Path.tryRemove("lib" + name + ".so")
                 Path.tryRemove(name + ".so")
             }
         } else if (isStaticLibrary) {
             if (Platform.isWindows) {
                 Path.tryRemove(name + ".lib")
             } else {
+                Path.tryRemove("lib" + name + ".a")
                 Path.tryRemove(name + ".a")
             }
         }
@@ -1989,13 +2134,27 @@ class NativeNode {
             if (Platform.isWindows) {
                 s.add(name + ".dll")
             } else {
-                s.add(name + ".so")
+                /*
+                 * NOTE: The "lib" prefix is not required, but is UNIX convention.
+                 */
+                if (true) {
+                    s.add("lib" + name + ".so")
+                } else {
+                    s.add(name + ".so")
+                }
             }
         } else if (isStaticLibrary) {
             if (linker == "link") {
                 s.add("/OUT")
             } else {
-                return name + ".a "
+                /*
+                 * NOTE: The "lib" prefix is not required, but is UNIX convention.
+                 */
+                if (true) {
+                    return "lib" + name + ".a "
+                } else {
+                    return name + ".a "
+                }
             }
 
             if (Platform.isWindows) {
@@ -2069,7 +2228,13 @@ class NativeNode {
             }
 
             for (library in libraries) {
-                if (Path.isFile(library + ".a")) {
+                if (Path.isFile("lib" + library + ".a")) {
+                    if (true) {
+                        s.add("lib" + library + ".a")
+                    } else {
+                        s.add("-l:lib%(library).a")
+                    }
+                } else if (Path.isFile(library + ".a")) {
                     if (true) {
                         s.add(library + ".a")
                     } else {
@@ -2207,7 +2372,11 @@ class NativeNode {
             }
         } else {
             if (isSharedLibrary) {
-                command = "strip -s %(name).so"
+                if (true) {
+                    command = "strip -s lib%(name).so"
+                } else {
+                    command = "strip -s %(name).so"
+                }
             } else if (isExecutable) {
                 command = "strip -s %(name)"
             }

@@ -7,24 +7,45 @@
 # ------------------------------------------------------------------------------
 
 if [ ! -d "stb" ]; then
-    git clone https://github.com/nothings/stb.git
+    if [ -d "../extern/stb" ]; then
+        cp -r ../extern/stb stb
+    else
+        git clone https://github.com/nothings/stb.git
+    fi
 fi
 
 if [ ! -d "subprocess.h" ]; then
-    git clone https://github.com/sheredom/subprocess.h.git
+    if [ -d "../extern/subprocess.h" ]; then
+        cp -r ../extern/subprocess.h subprocess.h
+    else
+        git clone https://github.com/sheredom/subprocess.h.git
+    fi
 fi
 
 if [ ! -d "tinydir" ]; then
-    git clone https://github.com/cxong/tinydir.git
+    if [ -d "../extern/tinydir" ]; then
+        cp -r ../extern/tinydir tinydir
+    else
+        git clone https://github.com/cxong/tinydir.git
+    fi
 fi
 
 if [ ! -d "wren" ]; then
-    git clone https://github.com/wren-lang/wren.git
+    if [ -d "../extern/wren" ]; then
+        cp -r ../extern/wren wren
+    else
+        git clone https://github.com/wren-lang/wren.git
+    fi
+
     python3 -B wren/util/generate_amalgamation.py >> wren.c
 fi
 
 if [ ! -d "zip" ]; then
-    git clone https://github.com/kuba--/zip.git
+    if [ -d "../extern/zip" ]; then
+        cp -r ../extern/zip zip
+    else
+        git clone https://github.com/kuba--/zip.git
+    fi
 fi
 
 # TODO: Optional command-line argument to choose compiler - use export for now.

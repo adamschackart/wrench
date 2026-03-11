@@ -574,6 +574,10 @@ WRENCH_DECL(void, SetSlotUnsignedInt, (WrenVM* vm, int slot, unsigned int value)
 WRENCH_DECL(uint8_t, GetSlotByte, (WrenVM* vm, int slot));
 WRENCH_DECL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value));
 
+/* Unsafe `wrenSetSlotNewForeign` that doesn't zero out the bytes that it allocates and returns.
+ */
+WRENCH_DECL(void*, SetSlotNewForeignFast, (WrenVM* vm, int slot, int classSlot, size_t size));
+
 /* Retrieves an entry from the map in [mapSlot] from index int pointer, and stores
  * key in [keySlot] and value in [valueSlot]. To iterate, set int index to 0, and
  * call until this returns false. Thanks to Jason A. Petrasko (Muragami) for this.
@@ -2459,8 +2463,26 @@ static void* wrenchLoadLibrary(WrenchContext* context, const char* name)
     }
     #else
     {
-        // TODO: lib prefix?
+        /* Try "lib" prefix first.
+         */
+        wrench_snprintf(path, sizeof(path), "%slib%s.so", wrenchGetBasePath(context), name);
+        library = dlopen(path, RTLD_LAZY);
 
+        if (library != NULL)
+        {
+            return library;
+        }
+
+        wrench_snprintf(path, sizeof(path), "lib%s.so", name);
+        library = dlopen(path, RTLD_LAZY);
+
+        if (library != NULL)
+        {
+            return library;
+        }
+
+        /* Try bare name, with and without base path.
+         */
         wrench_snprintf(path, sizeof(path), "%s%s.so", wrenchGetBasePath(context), name);
         library = dlopen(path, RTLD_LAZY);
 
@@ -3987,6 +4009,41 @@ WRENCH_IMPL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value))
 #ifdef stderr
 #undef stderr
 #endif
+
+static inline ObjForeign* wrenNewForeignFast(WrenVM* vm, ObjClass* classObj, size_t size)
+{
+    ObjForeign* object = ALLOCATE_FLEX(vm, ObjForeign, uint8_t, size);
+
+    // initObj(vm, &object->obj, OBJ_FOREIGN, classObj);
+    object->obj.type = OBJ_FOREIGN;
+    object->obj.isDark = false;
+    object->obj.classObj = classObj;
+    object->obj.next = vm->first;
+    vm->first = &object->obj;
+
+    return object;
+}
+
+WRENCH_IMPL(void*, SetSlotNewForeignFast, (WrenVM* vm, int slot, int classSlot, size_t size))
+{
+    // validateApiSlot(vm, slot);
+    wrench_assert(slot >= 0, "Slot cannot be negative.");
+    wrench_assert(slot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    // validateApiSlot(vm, classSlot);
+    wrench_assert(classSlot >= 0, "Slot cannot be negative.");
+    wrench_assert(classSlot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    wrench_assert(IS_CLASS(vm->apiStack[classSlot]), "Slot must hold a class.");
+
+    ObjClass* classObj = AS_CLASS(vm->apiStack[classSlot]);
+    wrench_assert(classObj->numFields == -1, "Class must be a foreign class.");
+
+    ObjForeign* foreign = wrenNewForeignFast(vm, classObj, size);
+    vm->apiStack[slot] = OBJ_VAL(foreign);
+
+    return (void*)foreign->data;
+}
 
 /* XXX: This reaches into both VM and object internals, but it's the only way I can see to do this
  * without trying something like `wrenGetVariable` on `Map.iteratorValue`, or something yet uglier.
