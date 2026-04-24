@@ -436,6 +436,10 @@ WRENCH_DECL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs));
 WRENCH_DECL(void, RegisterGlobalInitFunction, (wrenLibraryInitFn init));
 WRENCH_DECL(void, RegisterGlobalQuitFunction, (wrenLibraryQuitFn quit));
 
+/* Register function that's called on the destruction of a specified VM.
+ */
+// TODO: RegisterLocalQuitFunction
+
 /* Enabled by default - may be disabled for security hardening purposes.
  */
 WRENCH_DECL(bool, GetForeignLibraryLoadEnabled, (WrenVM* vm));

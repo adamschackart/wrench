@@ -221,6 +221,23 @@ class Util {
             "static const char* coreModuleSource =\n" +
             lines.map { |line| "\"" + Util.escapeString(line) + "\\n\"" }.join("\n") +
             ";")
+        } else if (filename == "wren/src/vm/wren_primitive.h") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Fix collisions with Objective-C definitions.
+             */
+            data = data.replace(" Method", " WrenMethod")
+        } else if (filename == "wren/src/vm/wren_value.h") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Fix collisions with Objective-C definitions.
+             */
+            data = data.replace(" Method", " WrenMethod")
+            data = data.replace("(Method", "(WrenMethod")
         } else if (filename == "wren/src/vm/wren_value.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
@@ -313,6 +330,13 @@ class Util {
             /* Replace an `sprintf`.
              */
             data = data.replace("sprintf(buffer,", "wrench_snprintf(buffer, sizeof(buffer),")
+
+            /* Fix collisions with Objective-C definitions.
+             */
+            data = data.replace(" Method", " WrenMethod")
+            data = data.replace("(Method", "(WrenMethod")
+
+            data = data.replace("wrenMethod", "wrenWrenMethod")
         } else if (filename == "wren/src/vm/wren_vm.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
@@ -329,6 +353,10 @@ class Util {
                 "",
                 "      // If the class's method table doesn't include the symbol, bail."
             ].join("\n"))
+
+            /* Fix collisions with Objective-C definitions.
+             */
+            data = data.replace(" Method", " WrenMethod")
         }
 
         /* Patch to enable any source file to be overridden.
@@ -341,7 +369,7 @@ class Util {
         return patchWrenAmalgamationForSymbolTableReplacement_(filename, data)
     }
 
-    /* Enable replacement of O(n) SymbolTable. Bring your own hashtable.
+    /* Enable replacement of O(n) SymbolTable. Bring your own hashtable or cache.
      */
     static patchWrenAmalgamationForSymbolTableReplacement_(filename, data) {
         if (filename == "wren/src/vm/wren_utils.h") {
@@ -449,6 +477,470 @@ class Util {
             data = data.replace(
                 "module->variableNames.data[i]",
                 "wrenSymbolTableGet(&module->variableNames, i)")
+        }
+
+        return patchWrenAmalgamationForProfileMarkers_(filename, data)
+    }
+
+    static patchWrenAmalgamationForProfileMarkers_(filename, data) {
+        if (filename == "wren/src/vm/wren_core.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            // TODO
+        } else if (filename == "wren/src/vm/wren_primitive.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            // TODO
+        } else if (filename == "wren/src/vm/wren_value.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            // TODO
+        } else if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace([
+                "static ObjUpvalue* captureUpvalue(WrenVM* vm, ObjFiber* fiber, Value* local)",
+                "{",
+            ].join("\n"),
+            [
+                "#ifndef WRENCH_PROFILE_SCOPE",
+                "#define WRENCH_PROFILE_SCOPE() ((void)0)",
+                "#endif",
+                "static ObjUpvalue* captureUpvalue(WrenVM* vm, ObjFiber* fiber, Value* local)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void closeUpvalues(ObjFiber* fiber, Value* last)",
+                "{",
+            ].join("\n"),
+            [
+                "static void closeUpvalues(ObjFiber* fiber, Value* last)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static WrenForeignMethodFn findForeignMethod(WrenVM* vm,",
+                "                                             const char* moduleName,",
+                "                                             const char* className,",
+                "                                             bool isStatic,",
+                "                                             const char* signature)",
+                "{",
+            ].join("\n"),
+            [
+                "static WrenForeignMethodFn findForeignMethod(WrenVM* vm,",
+                "                                             const char* moduleName,",
+                "                                             const char* className,",
+                "                                             bool isStatic,",
+                "                                             const char* signature)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void bindMethod(WrenVM* vm, int methodType, int symbol,",
+                "                       ObjModule* module, ObjClass* classObj, Value methodValue)",
+                "{",
+            ].join("\n"),
+            [
+                "static void bindMethod(WrenVM* vm, int methodType, int symbol,",
+                "                       ObjModule* module, ObjClass* classObj, Value methodValue)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void callForeign(WrenVM* vm, ObjFiber* fiber,",
+                "                        WrenForeignMethodFn foreign, int numArgs)",
+                "{",
+            ].join("\n"),
+            [
+                "static void callForeign(WrenVM* vm, ObjFiber* fiber,",
+                "                        WrenForeignMethodFn foreign, int numArgs)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static ObjModule* getModule(WrenVM* vm, Value name)",
+                "{",
+            ].join("\n"),
+            [
+                "static ObjModule* getModule(WrenVM* vm, Value name)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static ObjClosure* compileInModule(WrenVM* vm, Value name, const char* source,",
+                "                                   bool isExpression, bool printErrors)",
+                "{",
+            ].join("\n"),
+            [
+                "static ObjClosure* compileInModule(WrenVM* vm, Value name, const char* source,",
+                "                                   bool isExpression, bool printErrors)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static Value validateSuperclass(WrenVM* vm, Value name, Value superclassValue,",
+                "                                int numFields)",
+                "{",
+            ].join("\n"),
+            [
+                "static Value validateSuperclass(WrenVM* vm, Value name, Value superclassValue,",
+                "                                int numFields)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void bindForeignClass(WrenVM* vm, ObjClass* classObj, ObjModule* module)",
+                "{",
+            ].join("\n"),
+            [
+                "static void bindForeignClass(WrenVM* vm, ObjClass* classObj, ObjModule* module)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void endClass(WrenVM* vm) ",
+                "{",
+            ].join("\n"),
+            [
+                "static void endClass(WrenVM* vm)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void createClass(WrenVM* vm, int numFields, ObjModule* module)",
+                "{",
+            ].join("\n"),
+            [
+                "static void createClass(WrenVM* vm, int numFields, ObjModule* module)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void createForeign(WrenVM* vm, ObjFiber* fiber, Value* stack)",
+                "{",
+            ].join("\n"),
+            [
+                "static void createForeign(WrenVM* vm, ObjFiber* fiber, Value* stack)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "void wrenFinalizeForeign(WrenVM* vm, ObjForeign* foreign)",
+                "{",
+            ].join("\n"),
+            [
+                "void wrenFinalizeForeign(WrenVM* vm, ObjForeign* foreign)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static Value resolveModule(WrenVM* vm, Value name)",
+                "{",
+            ].join("\n"),
+            [
+                "static Value resolveModule(WrenVM* vm, Value name)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static Value importModule(WrenVM* vm, Value name)",
+                "{",
+            ].join("\n"),
+            [
+                "static Value importModule(WrenVM* vm, Value name)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static Value getModuleVariable(WrenVM* vm, ObjModule* module,",
+                "                               Value variableName)",
+                "{",
+            ].join("\n"),
+            [
+                "static Value getModuleVariable(WrenVM* vm, ObjModule* module,",
+                "                               Value variableName)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "inline static bool checkArity(WrenVM* vm, Value value, int numArgs)",
+                "{",
+            ].join("\n"),
+            [
+                "inline static bool checkArity(WrenVM* vm, Value value, int numArgs)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "ObjClosure* wrenCompileSource(WrenVM* vm, const char* module, const char* source,",
+                "                            bool isExpression, bool printErrors)",
+                "{",
+            ].join("\n"),
+            [
+                "ObjClosure* wrenCompileSource(WrenVM* vm, const char* module, const char* source,",
+                "                            bool isExpression, bool printErrors)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "Value wrenGetModuleVariable(WrenVM* vm, Value moduleName, Value variableName)",
+                "{",
+            ].join("\n"),
+            [
+                "Value wrenGetModuleVariable(WrenVM* vm, Value moduleName, Value variableName)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "Value wrenFindVariable(WrenVM* vm, ObjModule* module, const char* name)",
+                "{",
+            ].join("\n"),
+            [
+                "Value wrenFindVariable(WrenVM* vm, ObjModule* module, const char* name)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "int wrenDeclareVariable(WrenVM* vm, ObjModule* module, const char* name,",
+                "                        size_t length, int line)",
+                "{",
+            ].join("\n"),
+            [
+                "int wrenDeclareVariable(WrenVM* vm, ObjModule* module, const char* name,",
+                "                        size_t length, int line)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "int wrenDefineVariable(WrenVM* vm, ObjModule* module, const char* name,",
+                "                       size_t length, Value value, int* line)",
+                "{",
+            ].join("\n"),
+            [
+                "int wrenDefineVariable(WrenVM* vm, ObjModule* module, const char* name,",
+                "                       size_t length, Value value, int* line)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "void wrenPushRoot(WrenVM* vm, Obj* obj)",
+                "{",
+            ].join("\n"),
+            [
+                "void wrenPushRoot(WrenVM* vm, Obj* obj)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "void wrenPopRoot(WrenVM* vm)",
+                "{",
+            ].join("\n"),
+            [
+                "void wrenPopRoot(WrenVM* vm)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void validateApiSlot(WrenVM* vm, int slot)",
+                "{",
+            ].join("\n"),
+            [
+                "static void validateApiSlot(WrenVM* vm, int slot)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+
+            data = data.replace([
+                "static void setSlot(WrenVM* vm, int slot, Value value)",
+                "{",
+            ].join("\n"),
+            [
+                "static void setSlot(WrenVM* vm, int slot, Value value)",
+                "{",
+                "  WRENCH_PROFILE_SCOPE();",
+                "",
+            ].join("\n"))
+        }
+
+        return patchWrenAmalgamationForReentrancy_(filename, data)
+    }
+
+    /* Re-entrancy courtesy of Mattias Ljungström's "Lom" fork of Wren.
+     */
+    static patchWrenAmalgamationForReentrancy_(filename, data) {
+        if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Interpret.
+             */
+            data = [
+                "static WrenInterpretResult runInterpreter(WrenVM* vm, ObjFiber* fiber);",
+                "",
+                "static WrenInterpretResult wrenInterpretReentrant(WrenVM* vm, ObjClosure* closure)",
+                "{",
+                "  // Save state that will be modified.",
+                "  Value* savedApiStack = vm->apiStack;",
+                "  ObjFiber* outerFiber = vm->fiber;",
+                "",
+                "  wrenPushRoot(vm, (Obj*)closure);",
+                "  ObjFiber* fiber = wrenNewFiber(vm, closure);",
+                "  wrenPopRoot(vm);",
+                "  vm->apiStack = NULL;",
+                "",
+                "  WrenInterpretResult result = runInterpreter(vm, fiber);",
+                "",
+                "  // Restore the outer state.",
+                "  vm->fiber = outerFiber;",
+                "  vm->apiStack = savedApiStack;",
+                "",
+                "  return result;",
+                "}",
+                "\n",
+            ].join("\n") + data
+
+            data = data.replace([
+                "  if (closure == NULL) return WREN_RESULT_COMPILE_ERROR;",
+            ].join("\n"),
+            [
+                "  if (closure == NULL) return WREN_RESULT_COMPILE_ERROR;",
+                "",
+                "  if (vm->fiber != NULL && vm->fiber->numFrames > 0)",
+                "  {",
+                "    return wrenInterpretReentrant(vm, closure);",
+                "  }",
+            ].join("\n"))
+
+            /* Call.
+             */
+            data = [
+                "static WrenInterpretResult runInterpreter(WrenVM* vm, ObjFiber* fiber);",
+                "",
+                "static WrenInterpretResult wrenCallReentrant(WrenVM* vm, ObjClosure* closure)",
+                "{",
+                "  // For re-entrant calls, we use a separate fiber to avoid corrupting the outer call's stack state.",
+                "  Value* savedApiStack = vm->apiStack;",
+                "  ObjFiber* outerFiber = vm->fiber;",
+                "",
+                "  // Copy arguments from the current apiStack to a new fiber.",
+                "  int numArgs = (int)(vm->fiber->stackTop - vm->apiStack);",
+                "",
+                "  // Create a new fiber for this call. Root both closure and fiber to protect from GC during setup.",
+                "  wrenPushRoot(vm, (Obj*)closure);",
+                "  ObjFiber* innerFiber = wrenNewFiber(vm, NULL);",
+                "  wrenPushRoot(vm, (Obj*)innerFiber);",
+                "",
+                "  // Copy arguments to the new fiber's stack.",
+                "  wrenEnsureStack(vm, innerFiber, numArgs + closure->fn->maxSlots);",
+                "  for (int i = 0; i < numArgs; i++)",
+                "  {",
+                "    innerFiber->stack[i] = savedApiStack[i];",
+                "  }",
+                "  innerFiber->stackTop = innerFiber->stack + closure->fn->maxSlots;",
+                "",
+                "  vm->apiStack = NULL;",
+                "",
+                "  wrenCallFunction(vm, innerFiber, closure, 0);",
+                "",
+                "  // Pop roots before running - runInterpreter sets vm->fiber which roots it.",
+                "  wrenPopRoot(vm); // innerFiber",
+                "  wrenPopRoot(vm); // closure",
+                "",
+                "  WrenInterpretResult result = runInterpreter(vm, innerFiber);",
+                "",
+                "  // Copy the result back to the caller's stack.",
+                "  if (result == WREN_RESULT_SUCCESS && innerFiber->stackTop > innerFiber->stack)",
+                "  {",
+                "    savedApiStack[0] = innerFiber->stack[0];",
+                "  }",
+                "",
+                "  // Restore outer state.",
+                "  vm->fiber = outerFiber;",
+                "  vm->apiStack = savedApiStack;",
+                "",
+                "  return result;",
+                "}",
+                "\n",
+            ].join("\n") + data
+
+            data = data.replace([
+                "  ASSERT(vm->apiStack != NULL, \"Must set up arguments for call first.\");",
+                "  ASSERT(vm->fiber->numFrames == 0, \"Can not call from a foreign method.\");",
+            ].join("\n"),
+            [
+                "  ASSERT(vm->apiStack != NULL, \"Must set up arguments for call first.\");",
+            ].join("\n"))
+
+            data = data.replace([
+                "  // Clear the API stack. Now that wrenCall() has control, we no longer need",
+            ].join("\n"),
+            [
+                "  if (vm->fiber->numFrames > 0)",
+                "  {",
+                "    return wrenCallReentrant(vm, closure);",
+                "  }",
+                "",
+                "  // Clear the API stack. Now that wrenCall() has control, we no longer need",
+            ].join("\n"))
         }
 
         return data
@@ -798,6 +1290,8 @@ class Project {
         node.maxAsyncCompileJobs = config.getNum("max-async-compile-jobs", node.maxAsyncCompileJobs)
 
         node.linkTimeOptimization = config.getBool("link-time-optimization", node.linkTimeOptimization)
+        node.linkTimeOptimization = config.getBool("lto", node.linkTimeOptimization)
+
         node.stripDebugSymbols = config.getBool("strip-debug-symbols", node.stripDebugSymbols)
 
         node.debug = config.getBool("debug", node.debug)
