@@ -37,6 +37,11 @@ class Util {
     /* Modifies wren.c with performance improvements and some extra functionality.
      */
     static patchWrenAmalgamation(filename, data) {
+        /*
+         * Replace Windows-style line separators.
+         */
+        filename = filename.replace("\\", "/")
+
         if (filename == "wren/src/vm/wren_compiler.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
@@ -370,6 +375,11 @@ class Util {
     }
 
     /* Enable replacement of O(n) SymbolTable. Bring your own hashtable or cache.
+     *
+     * XXX: ObjModule embeds a SymbolTable inline, and at 64 bytes ObjModule
+     * fits exactly in one x86 cache line. Adding additional fields here pushes
+     * ObjModule past 64 bytes, and causes measurable performance regressions
+     * (~5-14%) due to extra cache line fetches on every module access.
      */
     static patchWrenAmalgamationForSymbolTableReplacement_(filename, data) {
         if (filename == "wren/src/vm/wren_utils.h") {
@@ -940,6 +950,131 @@ class Util {
                 "  }",
                 "",
                 "  // Clear the API stack. Now that wrenCall() has control, we no longer need",
+            ].join("\n"))
+        }
+
+        return patchWrenAmalgamationForSwitchedGoto_(filename, data)
+    }
+
+    /* Performance improvement for MSVC courtesy of Mattias Ljungström's "Lom" fork of Wren.
+     */
+    static patchWrenAmalgamationForSwitchedGoto_(filename, data) {
+        if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = [
+                "#ifndef WREN_SWITCHED_GOTO",
+                "#define WREN_SWITCHED_GOTO 1",
+                "#endif",
+                "",
+            ].join("\n") + data
+
+            data = data.replace([
+                "  #else",
+                "",
+                "  #define INTERPRET_LOOP",
+            ].join("\n"),
+            [
+                /* Switched goto: each DISPATCH() has its own switch for better branch prediction.
+                 * XXX TODO FIXME: Manually put in all cases from wren_opcodes.h - parse header!!!
+                 */
+                "  #elif WREN_SWITCHED_GOTO",
+                "",
+                "  typedef int _ensure_all_77_opcodes_are_covered[CODE_END == 76 ? 1 : -1];",
+                "",
+                "  #define DISPATCH() do \\",
+                "  { \\",
+                "    DEBUG_TRACE_INSTRUCTIONS(); \\",
+                "    switch (instruction = (Code)READ_BYTE()) { \\",
+                "      case CODE_CONSTANT: goto lbl_CONSTANT; \\",
+                "      case CODE_NULL: goto lbl_NULL; \\",
+                "      case CODE_FALSE: goto lbl_FALSE; \\",
+                "      case CODE_TRUE: goto lbl_TRUE; \\",
+                "      case CODE_LOAD_LOCAL_0: goto lbl_LOAD_LOCAL_0; \\",
+                "      case CODE_LOAD_LOCAL_1: goto lbl_LOAD_LOCAL_1; \\",
+                "      case CODE_LOAD_LOCAL_2: goto lbl_LOAD_LOCAL_2; \\",
+                "      case CODE_LOAD_LOCAL_3: goto lbl_LOAD_LOCAL_3; \\",
+                "      case CODE_LOAD_LOCAL_4: goto lbl_LOAD_LOCAL_4; \\",
+                "      case CODE_LOAD_LOCAL_5: goto lbl_LOAD_LOCAL_5; \\",
+                "      case CODE_LOAD_LOCAL_6: goto lbl_LOAD_LOCAL_6; \\",
+                "      case CODE_LOAD_LOCAL_7: goto lbl_LOAD_LOCAL_7; \\",
+                "      case CODE_LOAD_LOCAL_8: goto lbl_LOAD_LOCAL_8; \\",
+                "      case CODE_LOAD_LOCAL: goto lbl_LOAD_LOCAL; \\",
+                "      case CODE_STORE_LOCAL: goto lbl_STORE_LOCAL; \\",
+                "      case CODE_LOAD_UPVALUE: goto lbl_LOAD_UPVALUE; \\",
+                "      case CODE_STORE_UPVALUE: goto lbl_STORE_UPVALUE; \\",
+                "      case CODE_LOAD_MODULE_VAR: goto lbl_LOAD_MODULE_VAR; \\",
+                "      case CODE_STORE_MODULE_VAR: goto lbl_STORE_MODULE_VAR; \\",
+                "      case CODE_LOAD_FIELD_THIS: goto lbl_LOAD_FIELD_THIS; \\",
+                "      case CODE_STORE_FIELD_THIS: goto lbl_STORE_FIELD_THIS; \\",
+                "      case CODE_LOAD_FIELD: goto lbl_LOAD_FIELD; \\",
+                "      case CODE_STORE_FIELD: goto lbl_STORE_FIELD; \\",
+                "      case CODE_POP: goto lbl_POP; \\",
+                "      case CODE_CALL_0: goto lbl_CALL_0; \\",
+                "      case CODE_CALL_1: goto lbl_CALL_1; \\",
+                "      case CODE_CALL_2: goto lbl_CALL_2; \\",
+                "      case CODE_CALL_3: goto lbl_CALL_3; \\",
+                "      case CODE_CALL_4: goto lbl_CALL_4; \\",
+                "      case CODE_CALL_5: goto lbl_CALL_5; \\",
+                "      case CODE_CALL_6: goto lbl_CALL_6; \\",
+                "      case CODE_CALL_7: goto lbl_CALL_7; \\",
+                "      case CODE_CALL_8: goto lbl_CALL_8; \\",
+                "      case CODE_CALL_9: goto lbl_CALL_9; \\",
+                "      case CODE_CALL_10: goto lbl_CALL_10; \\",
+                "      case CODE_CALL_11: goto lbl_CALL_11; \\",
+                "      case CODE_CALL_12: goto lbl_CALL_12; \\",
+                "      case CODE_CALL_13: goto lbl_CALL_13; \\",
+                "      case CODE_CALL_14: goto lbl_CALL_14; \\",
+                "      case CODE_CALL_15: goto lbl_CALL_15; \\",
+                "      case CODE_CALL_16: goto lbl_CALL_16; \\",
+                "      case CODE_SUPER_0: goto lbl_SUPER_0; \\",
+                "      case CODE_SUPER_1: goto lbl_SUPER_1; \\",
+                "      case CODE_SUPER_2: goto lbl_SUPER_2; \\",
+                "      case CODE_SUPER_3: goto lbl_SUPER_3; \\",
+                "      case CODE_SUPER_4: goto lbl_SUPER_4; \\",
+                "      case CODE_SUPER_5: goto lbl_SUPER_5; \\",
+                "      case CODE_SUPER_6: goto lbl_SUPER_6; \\",
+                "      case CODE_SUPER_7: goto lbl_SUPER_7; \\",
+                "      case CODE_SUPER_8: goto lbl_SUPER_8; \\",
+                "      case CODE_SUPER_9: goto lbl_SUPER_9; \\",
+                "      case CODE_SUPER_10: goto lbl_SUPER_10; \\",
+                "      case CODE_SUPER_11: goto lbl_SUPER_11; \\",
+                "      case CODE_SUPER_12: goto lbl_SUPER_12; \\",
+                "      case CODE_SUPER_13: goto lbl_SUPER_13; \\",
+                "      case CODE_SUPER_14: goto lbl_SUPER_14; \\",
+                "      case CODE_SUPER_15: goto lbl_SUPER_15; \\",
+                "      case CODE_SUPER_16: goto lbl_SUPER_16; \\",
+                "      case CODE_JUMP: goto lbl_JUMP; \\",
+                "      case CODE_LOOP: goto lbl_LOOP; \\",
+                "      case CODE_JUMP_IF: goto lbl_JUMP_IF; \\",
+                "      case CODE_AND: goto lbl_AND; \\",
+                "      case CODE_OR: goto lbl_OR; \\",
+                "      case CODE_CLOSE_UPVALUE: goto lbl_CLOSE_UPVALUE; \\",
+                "      case CODE_RETURN: goto lbl_RETURN; \\",
+                "      case CODE_CLOSURE: goto lbl_CLOSURE; \\",
+                "      case CODE_CONSTRUCT: goto lbl_CONSTRUCT; \\",
+                "      case CODE_FOREIGN_CONSTRUCT: goto lbl_FOREIGN_CONSTRUCT; \\",
+                "      case CODE_CLASS: goto lbl_CLASS; \\",
+                "      case CODE_END_CLASS: goto lbl_END_CLASS; \\",
+                "      case CODE_FOREIGN_CLASS: goto lbl_FOREIGN_CLASS; \\",
+                "      case CODE_METHOD_INSTANCE: goto lbl_METHOD_INSTANCE; \\",
+                "      case CODE_METHOD_STATIC: goto lbl_METHOD_STATIC; \\",
+                "      case CODE_END_MODULE: goto lbl_END_MODULE; \\",
+                "      case CODE_IMPORT_MODULE: goto lbl_IMPORT_MODULE; \\",
+                "      case CODE_IMPORT_VARIABLE: goto lbl_IMPORT_VARIABLE; \\",
+                "      case CODE_END: goto lbl_END; \\",
+                "      default: UNREACHABLE(); \\",
+                "    } \\",
+                "  } while (false)",
+                "",
+                "  #define INTERPRET_LOOP  DISPATCH();",
+                "  #define CASE_CODE(name) lbl_##name",
+                "",
+                "  #else",
+                "",
+                "  #define INTERPRET_LOOP",
             ].join("\n"))
         }
 
@@ -3892,6 +4027,7 @@ var main = Fn.new {
     if (false) {
         project.define("WREN_NAN_TAGGING", 0)
         project.define("WREN_COMPUTED_GOTO", 0)
+        project.define("WREN_SWITCHED_GOTO", 0)
         project.define("WREN_OPT_META", 0)
         project.define("WREN_OPT_RANDOM", 0)
     }
