@@ -2813,6 +2813,13 @@ static size_t wrenchGlobalQuitFuncCount;
     #include <wrench_rect.c>
     #endif
 
+    #ifndef WRENCH_HAVE_SCHEDULER
+    #define WRENCH_HAVE_SCHEDULER 0
+    #endif
+    #if WRENCH_HAVE_SCHEDULER
+    #include <wrench_scheduler.c>
+    #endif
+
     #ifndef WRENCH_HAVE_TCC
     #define WRENCH_HAVE_TCC 0
     #endif
@@ -2992,6 +2999,16 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
         }
         #endif /* WRENCH_HAVE_RECT */
 
+        #if WRENCH_HAVE_SCHEDULER
+        {
+            if (!schedulerWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_SCHEDULER */
+
         #if WRENCH_HAVE_TCC
         {
             if (!tccWrenInit(vm))
@@ -3126,6 +3143,12 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
             tccWrenQuit();
         }
         #endif /* WRENCH_HAVE_TCC */
+
+        #if WRENCH_HAVE_SCHEDULER
+        {
+            schedulerWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_SCHEDULER */
 
         #if WRENCH_HAVE_RECT
         {

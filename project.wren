@@ -3933,6 +3933,9 @@ var main = Fn.new {
         HeaderNode.new(headers, "project", "module", "project.wren", "wrench_project.c")
         project.define("WRENCH_HAVE_PROJECT")
 
+        HeaderNode.new(headers, "scheduler", "module", "scheduler.wren", "wrench_scheduler.c")
+        project.define("WRENCH_HAVE_SCHEDULER")
+
         if (command == "build") {
             headers.build()
         } else if (command == "clean") {
@@ -4100,6 +4103,11 @@ var main = Fn.new {
         if (Path.isFile("wrench_project.c")) {
             node = NativeNode.new(project, "project", "shared_library")
             node.sources.add("wrench_project.c")
+        }
+
+        if (Path.isFile("wrench_scheduler.c")) {
+            node = NativeNode.new(project, "scheduler", "shared_library")
+            node.sources.add("wrench_scheduler.c")
         }
 
         if (false) {

@@ -21,3 +21,4 @@ del *.exp /q
 
 del wrench_config.c /q
 del wrench_project.c /q
+del wrench_scheduler.c /q

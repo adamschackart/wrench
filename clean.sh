@@ -19,3 +19,4 @@ rm -rf *.dwo
 
 rm -rf wrench_config.c
 rm -rf wrench_project.c
+rm -rf wrench_scheduler.c
