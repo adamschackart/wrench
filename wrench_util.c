@@ -714,6 +714,45 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
         "}\n"
 
         )) { return false; }
+
+        if (!wrenCode(vm,
+
+        "class Generator {\n"
+            "construct new(fn) {\n"
+                "if (fn is Fiber) {\n"
+                    "_fiber = fn\n"
+                "} else if (fn is Fn) {\n"
+                    "_fiber = Fiber.new(fn)\n"
+                "} else {\n"
+                    "Fiber.abort(\"%(fn)\")\n"
+                "}\n"
+
+                "_data = null\n"
+            "}\n"
+
+            "static newData(data, fn) {\n"
+                "var generator = new(fn)\n"
+
+                "generator.data = data\n"
+                "return generator\n"
+            "}\n"
+
+            "data { _data }\n"
+            "data=(value) { _data = value }\n"
+
+            "iterate(iterator) {\n"
+                "if (_fiber.isDone) {\n"
+                    "return false\n"
+                "}\n"
+
+                "_current = _fiber.call(data)\n"
+                "return !_fiber.isDone\n"
+            "}\n"
+
+            "iteratorValue(iterator) { _current }\n"
+        "}\n"
+
+        )) { return false; }
     }
 
     if (!utilWrenInitEx(vm))

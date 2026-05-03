@@ -81,6 +81,15 @@ class Task {
 
         Fiber.yield()
     }
+
+    /* TODO: This will have to be a macro, as the condition must be re-evaluated
+    ~* for each iteration of the loop. Leaving this to document a common pattern.
+
+    waitUntil(condition) {
+        while (!condition) {
+            Fiber.yield()
+        }
+    }*/
 }
 
 class Scheduler {
