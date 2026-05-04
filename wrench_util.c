@@ -724,7 +724,14 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
                 "} else if (fn is Fn) {\n"
                     "_fiber = Fiber.new(fn)\n"
                 "} else {\n"
-                    "Fiber.abort(\"%(fn)\")\n"
+                    "if (true) {\n"
+                        /*
+                         * Capture in upvalue and try to call.
+                         */
+                        "_fiber = Fiber.new { fn.call() }\n"
+                    "} else {\n"
+                        "Fiber.abort(\"%(fn)\")\n"
+                    "}\n"
                 "}\n"
 
                 "_data = null\n"

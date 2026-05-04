@@ -68,7 +68,14 @@ class Task {
         } else if (value is Task) {
             _fiber = value.fiber
         } else {
-            Fiber.abort("%(value)")
+            if (true) {
+                /*
+                 * Capture in upvalue and try to call.
+                 */
+                _fiber = Fiber.new { value.call() }
+            } else {
+                Fiber.abort("%(value)")
+            }
         }
     }
 
@@ -137,5 +144,41 @@ class Scheduler {
         } else {
             return add(Task.create(this, task))
         }
+    }
+}
+
+/* TODO: Improve this little test/example. Should print:
+ *
+ * A phase 1
+ * A phase 2
+ * B phase 1
+ * A phase 3
+ * B phase 2
+ */
+var main = Fn.new {
+    import "time" for Timer
+    var scheduler = Scheduler.new()
+
+    var flag = false
+
+    scheduler.add(0.4) { |task|
+        System.print("A phase 1")
+        task.wait(0.2)
+        System.print("A phase 2")
+        flag = true
+        task.wait(task.data)
+        System.print("A phase 3")
+    }
+
+    scheduler.add { |task|
+        while (!flag) Fiber.yield()
+        System.print("B phase 1")
+        task.wait(0.7)
+        System.print("B phase 2")
+    }
+
+    for (i in 0...60) {
+        scheduler.update(1.0 / 60.0)
+        Timer.sleepMS((1000.0 / 60.0).floor)
     }
 }
