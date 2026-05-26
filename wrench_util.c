@@ -197,6 +197,43 @@ static void util_StringUtil_equals(WrenVM* vm)
     wrenSetSlotBool(vm, 0, wrench_strcmp(a, b) == 0);
 }
 
+static void util_StringUtil_generateVisualStudioGUID(WrenVM* vm)
+{
+    const char* input = wrenGetSlotString(vm, 1);
+    char output[64];
+
+    // 32-bit FNV-1a string hash.
+    uint32_t hash = 2166136261u;
+
+    for (int i = 0; input[i] != '\0'; i++)
+    {
+        hash ^= (uint8_t)input[i];
+        hash *= 16777619u;
+    }
+
+    // Derive components by multiplying by primes. Using uint32_t automatically wraps overflows,
+    // acting exactly like the (& 0xFFFFFFFF) bitwise clamp in the default Wren implementation.
+    const uint32_t part1 = hash;
+    const uint32_t part2 = hash * 31u;
+    const uint32_t part3 = hash * 73u;
+    const uint32_t part4 = hash * 109u;
+
+    // Format as XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. We emulate the Wren string slicing
+    // (e.g., hex2[0...4] and hex2[4...8]) by shifting the 32-bit integers down by 16 bits
+    // for the first half, and masking the lower 16 bits for the second half.
+    wrench_snprintf(output,
+                    sizeof(output),
+                    "%08x-%04x-%04x-%04x-%04x%08x",
+                    part1,
+                    (part2 >> 16) & 0xFFFF,
+                    part2 & 0xFFFF,
+                    (part3 >> 16) & 0xFFFF,
+                    part3 & 0xFFFF,
+                    part4);
+
+    wrenSetSlotString(vm, 0, (const char*)output);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -634,6 +671,44 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
                 )) { return false; }
             }
 
+            /* Visual Studio strictly expects GUIDs in the 8-4-4-4-12 hex format. This enables us to
+             * generate a deterministic psuedo-hash to ensure the solution doesn't constantly reload.
+             */
+            if (1)
+            {
+                WREN_METHOD(util, StringUtil, true, generateVisualStudioGUID, "(str)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
+
+                "static generateVisualStudioGUID(str) {\n"
+                    "var hash = 2166136261\n"
+
+                    "for (i in 0...str.byteCount_) {\n"
+                        "hash = (hash ^ str.bytes[i]) * 16777619\n"
+                    "}\n"
+
+                    /* Helper to guarantee 8-character strings by padding leading zeros.
+                     * TODO: Should add this to StringUtil & make padding configurable.
+                     */
+                    "var pad8 = Fn.new { |num|\n"
+                        "var s = \"00000000\" + num.toString\n"
+                        "return s[-8..-1]\n"
+                    "}\n"
+
+                    "var hex1 = pad8.call(NumUtil.hex32(hash & 0xFFFFFFFF))\n"
+                    "var hex2 = pad8.call(NumUtil.hex32((hash * 31) & 0xFFFFFFFF))\n"
+                    "var hex3 = pad8.call(NumUtil.hex32((hash * 73) & 0xFFFFFFFF))\n"
+                    "var hex4 = pad8.call(NumUtil.hex32((hash * 109) & 0xFFFFFFFF))\n"
+
+                    // Maps to XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX.
+                    "return hex1 + \"-\" + hex2[0...4] + \"-\" + hex2[4...8] + \"-\" + hex3[0...4] + \"-\" + hex3[4...8] + hex4\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
             // TODO: Fuzzy string matching.
 
             if (!utilStringUtilWrenInitEx(vm))
@@ -692,8 +767,9 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
             "}\n"
 
             "pop() {\n"
-                "if (_map.count) {\n"
-                    "return _map.remove(_map.keys[0])\n"
+                "if (_map.count > 0) {\n"
+                    "var iterator = _map.keys.iterate(null)\n"
+                    "return _map.remove(_map.keys.iteratorValue(iterator))\n"
                 "} else {\n"
                     "return null\n"
                 "}\n"

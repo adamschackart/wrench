@@ -79,7 +79,16 @@ class Config {
     getStr(key, fallback) { get(key, fallback).toString }
     setStr(key, value) { set(key, value) }
 
-    getNum(key, fallback) { Num.fromString(getStr(key, fallback)) }
+    getNum(key, fallback) {
+        var value = Num.fromString(getStr(key, fallback))
+
+        if (value == null) {
+            return fallback
+        }
+
+        return value
+    }
+
     setNum(key, value) { set(key, value) }
 
     getBool(key, fallback) {
@@ -105,16 +114,10 @@ class Config {
             return
         }
 
-        var split = line.split("=")
+        var split_index = line.indexOf("=")
 
-        var lhs = split[0]
-        var rhs
-
-        if (split.count > 1) {
-            rhs = split[1]
-        } else {
-            rhs = "true"
-        }
+        var lhs = split_index > -1 ? line[0...split_index].trim() : line
+        var rhs = split_index > -1 ? line[split_index + 1...line.count].trim() : "true"
 
         if (_ignored.containsKey(lhs)) {
             return

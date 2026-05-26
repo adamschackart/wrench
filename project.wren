@@ -1115,7 +1115,7 @@ class Project {
      * TODO: Only rebuild sources if files are modified (cache modified time).
      */
     construct new(project, name) {
-        _project = _project
+        _project = project
         _name = name != null ? name : (_project != null ? _project.name.toString : "main")
 
         /* TODO: Check environment variables.
@@ -1148,6 +1148,8 @@ class Project {
         _verbose = _project != null ? _project.verbose : true
         _defines = _project != null ? _project.defines.toList : []
         _undefs = _project != null ? _project.undefs.toList : []
+        _compilerPrefix = _project != null ? _project.compilerPrefix : ""
+        _linkerPrefix = _project != null ? _project.linkerPrefix : ""
         _extraCompilerFlags = _project != null ? _project.extraCompilerFlags.toList : []
         _extraLinkerFlags = _project != null ? _project.extraLinkerFlags.toList : []
         _libraryPaths = _project != null ? _project.libraryPaths.toList : ["."]
@@ -1251,6 +1253,14 @@ class Project {
     isDefinedFalse(key) {
         return Project.isDefinedFalse_(key, defines)
     }
+
+    /* NOTE: For prepending cross-compiler prefixes, i.e. "riscv64-linux-gnu-gcc".
+     */
+    compilerPrefix { _compilerPrefix }
+    compilerPrefix=(value) { _compilerPrefix = value }
+
+    linkerPrefix { _linkerPrefix }
+    linkerPrefix=(value) { _linkerPrefix = value }
 
     extraCompilerFlags { _extraCompilerFlags }
     extraCompilerFlags=(value) { _extraCompilerFlags = value }
@@ -1555,8 +1565,9 @@ class Project {
         /*
          * Find/run vcvarsall so we don't have to use Developer Command Prompt on Win32.
          * This will also enable us to do 32-bit builds, and cross-compile for ARM etc.
+         * TODO: Use "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
          */
-        if (__msvcIsInit == true) {
+        if (__msvcIsInit) {
             return
         }
 
@@ -1708,6 +1719,8 @@ class NativeNode {
         _verbose = _project.verbose
         _defines = _project.defines.toList
         _undefs = _project.undefs.toList
+        _compilerPrefix = _project.compilerPrefix
+        _linkerPrefix = _project.linkerPrefix
         _extraCompilerFlags = _project.extraCompilerFlags.toList
         _extraLinkerFlags = _project.extraLinkerFlags.toList
         _libraryPaths = _project.libraryPaths.toList
@@ -1792,32 +1805,40 @@ class NativeNode {
 
     // TODO: isPrecompiledHeader
 
-    static executableExtension {
-        if (Platform.isWindows) {
+    executableExtension {
+        if (compiler == "emcc") {
+            if (isCLI) {
+                return ".js"
+            } else {
+                return ".html"
+            }
+        } else if (Platform.isWindows) {
             return ".exe"
         } else {
             return ""
         }
     }
 
-    static sharedLibraryExtension {
-        if (Platform.isWindows) {
+    sharedLibraryExtension {
+        if (compiler == "emcc") {
+            return ".wasm"
+        } else if (Platform.isWindows) {
             return ".dll"
         } else {
             return ".so"
         }
     }
 
-    static staticLibraryExtension {
-        if (Platform.isWindows) {
+    staticLibraryExtension {
+        if (compiler == "cl") {
             return ".lib"
         } else {
             return ".a"
         }
     }
 
-    static objectExtension {
-        if (Platform.isWindows) {
+    objectExtension {
+        if (compiler == "cl") {
             return ".obj"
         } else {
             return ".o"
@@ -1826,19 +1847,19 @@ class NativeNode {
 
     fileExtension {
         if (isExecutable) {
-            return type.executableExtension
+            return executableExtension
         }
 
         if (isSharedLibrary) {
-            return type.sharedLibraryExtension
+            return sharedLibraryExtension
         }
 
         if (isStaticLibrary) {
-            return type.staticLibraryExtension
+            return staticLibraryExtension
         }
 
         if (isObjects) {
-            return type.objectExtension
+            return objectExtension
         }
 
         Fiber.abort("%(this)")
@@ -1904,6 +1925,14 @@ class NativeNode {
     isDefinedFalse(key) {
         return Project.isDefinedFalse_(key, defines)
     }
+
+    /* NOTE: For prepending cross-compiler prefixes, i.e. "riscv64-linux-gnu-gcc".
+     */
+    compilerPrefix { _compilerPrefix }
+    compilerPrefix=(value) { _compilerPrefix = value }
+
+    linkerPrefix { _linkerPrefix }
+    linkerPrefix=(value) { _linkerPrefix = value }
 
     extraCompilerFlags { _extraCompilerFlags }
     extraCompilerFlags=(value) { _extraCompilerFlags = value }
@@ -2160,6 +2189,7 @@ class NativeNode {
             Path.tryRemove(sourceToObject_(source))
 
             if (compiler != "cl") {
+                Path.tryRemove(sourceToMakefileDependency_(source))
                 Path.tryRemove(sourceToDWARF_(source))
             }
         }
@@ -2213,20 +2243,36 @@ class NativeNode {
                 compilerName = "ml"
             }
         } else if (compilerName == "cc") {
+            /*
+             * Handle C++ files for a generic Unix compiler.
+             */
             if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
                 compilerName = "c++"
             }
         } else if (compilerName == "gcc") {
+            /*
+             * Handle C++ files for the GNU compiler collection.
+             */
             if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
                 compilerName = "g++"
             }
         } else if (compilerName == "clang") {
+            /*
+             * Handle C++ files for the LLVM C and C++ frontend.
+             */
             if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
                 compilerName = "clang++"
             }
+        } else if (compilerName == "emcc") {
+            /*
+             * Handle C++ files for the Emscripten compiler.
+             */
+            if (filename.endsWith(".cpp") || filename.endsWith(".cc") || filename.endsWith(".cxx")) {
+                compilerName = "em++"
+            }
         }
 
-        return compilerName + " "
+        return "%(compilerPrefix)%(compilerName) "
     }
 
     compilerIncludePaths_ {
@@ -2284,6 +2330,12 @@ class NativeNode {
 
                 s.add("/DNDEBUG=1")
                 s.add("/INCREMENTAL:NO")
+
+                // Package global data in COMDAT sections for optimization.
+                s.add("/Gw")
+
+                // Remove unreferenced functions or data if they're COMDAT or have internal linkage only.
+                s.add("/Zc:inline")
             }
         } else {
             if (debug) {
@@ -2511,16 +2563,20 @@ class NativeNode {
 
             s.add("-c")
 
-            // For very large builds.
-            if (release) {
-                if (!Platform.isRiscV) {
-                    s.add("-gsplit-dwarf")
-                }
+            if (compiler == "emcc") {
+                //s.add("-s WASM=1")
             } else {
-                s.add("-gsplit-dwarf")
+                // For very large builds.
+                if (release) {
+                    if (!Platform.isRiscV) {
+                        s.add("-gsplit-dwarf")
+                    }
+                } else {
+                    s.add("-gsplit-dwarf")
 
-                if (Platform.isRiscV) {
-                    s.add("-mno-relax")
+                    if (Platform.isRiscV) {
+                        s.add("-mno-relax")
+                    }
                 }
             }
 
@@ -2535,6 +2591,9 @@ class NativeNode {
             } else {
                 s.add("-fno-exceptions")
             }
+
+            // TODO: strictAliasing option/flag - for now we go with the safe route.
+            s.add("-fno-strict-aliasing")
 
             /*if (staticCRT) {
                 Fiber.abort("TODO")
@@ -2648,35 +2707,37 @@ class NativeNode {
     // ===== [ platform-specific implementation details (linker) ] =============
 
     linkerName_ {
+        var prefix = linkerPrefix
         var linkerName = linker
 
         if (isStaticLibrary) {
+            prefix = ""
+
             if (linkerName == "link") {
                 linkerName = "lib"
             } else if (linkerName == "tcc") {
                 linkerName = "tcc -ar"
+            } else if (linkerName == "emcc") {
+                linkerName = "emar rcs"
             } else {
                 // TODO: Profile the difference here.
                 linkerName = /*"gcc-" +*/ "ar rcs"
             }
-        }
-        /* TODO: Test this with C++ code.
+        } else if (linker != "link") {
+            var cppHasBeenCompiled = sources.any { |filename| filename.endsWith(".cpp") }
 
-        else if (linkerName == "cc") {
-            if (_cppHasBeenCompiled) {
+            if (linkerName == "cc" && cppHasBeenCompiled) {
                 linkerName = "c++"
-            }
-        } else if (linkerName == "gcc") {
-            if (_cppHasBeenCompiled) {
+            } else if (linkerName == "gcc" && cppHasBeenCompiled) {
                 linkerName = "g++"
-            }
-        } else if (linkerName == "clang") {
-            if (_cppHasBeenCompiled) {
+            } else if (linkerName == "clang" && cppHasBeenCompiled) {
                 linkerName = "clang++"
+            } else if (linkerName == "emcc" && cppHasBeenCompiled) {
+                linkerName = "em++"
             }
-        }*/
+        }
 
-        return linkerName + " "
+        return "%(prefix)%(linkerName) "
     }
 
     linkerPlatformFlags_ {
@@ -2692,6 +2753,26 @@ class NativeNode {
             if (release && linkTimeOptimization && sources.count > 1) {
                 s.add("/LTCG")
             }
+
+            if (release) {
+                // Eliminate functions and data that are never referenced.
+                s.add("/OPT:REF")
+
+                // Perform COMDAT folding, then do it again.
+                s.add("/OPT:ICF=2")
+            }
+        } else if (linker == "emcc") {
+            //s.add("-s WASM=1")
+
+            if (isExecutable) {
+                s.add("-s ALLOW_MEMORY_GROWTH=1")
+                s.add("-s MAIN_MODULE=1")
+            } else if (isSharedLibrary) {
+                s.add("-s SIDE_MODULE=1")
+            }
+
+            // Enable filesystem when running in node.js instead of a browser.
+            //s.add("-s NODERAWFS=1")
         } else {
             /*
              * XXX: Some versions of `ar` don't like link-time optimization.
@@ -2709,7 +2790,7 @@ class NativeNode {
 
         /* TODO: if (!noStandardLibrary)
          */
-        if (!Platform.isWindows && !isStaticLibrary) {
+        if (!Platform.isWindows && !isStaticLibrary && linker != "emcc") {
             s.add("-pthread")
         }
 
@@ -2748,20 +2829,23 @@ class NativeNode {
                 s.add("-o")
             }
 
-            if (Platform.isWindows) {
-                s.add(name + ".exe")
-            } else {
-                s.add(name)
-            }
+            s.add(name + executableExtension)
         } else if (isSharedLibrary) {
             if (linker == "link") {
                 s.add("/DLL /OUT")
+            } else if (linker == "emcc") {
+                s.add("-o")
             } else {
                 s.add("-fPIC -shared -o")
             }
 
             if (Platform.isWindows) {
                 s.add(name + ".dll")
+            } else if (false && linker == "emcc") {
+                /*
+                 * Emscripten understands .so files.
+                 */
+                s.add(name + ".wasm")
             } else {
                 /*
                  * NOTE: The "lib" prefix is not required, but is UNIX convention.
@@ -2807,7 +2891,8 @@ class NativeNode {
         var s = ( source.replace(".cpp", extension)
                         .replace(".cc", extension)
                         .replace(".cxx", extension)
-                        .replace(".c", extension) )
+                        .replace(".c", extension)
+                        .replace(".S", extension) )
 
         s = s.split("\\")[-1]
         s = s.split("/")[-1]
@@ -2816,11 +2901,15 @@ class NativeNode {
     }
 
     sourceToObject_(source) {
-        return sourceToOtherFileType_(source, type.objectExtension)
+        return sourceToOtherFileType_(source, objectExtension)
     }
 
     sourceToDWARF_(source) {
         return sourceToOtherFileType_(source, ".dwo")
+    }
+
+    sourceToMakefileDependency_(source) {
+        return sourceToOtherFileType_(source, ".d")
     }
 
     linkerObjects_ {
@@ -2834,7 +2923,7 @@ class NativeNode {
             /*
              * NOTE: If name has no extension, append platform object extension.
              */
-            if (object.endsWith(type.objectExtension)) {
+            if (object.endsWith(objectExtension)) {
                 s.add(object)
             } else {
                 s.add(sourceToObject_(object))
@@ -2883,10 +2972,13 @@ class NativeNode {
 
         /* TODO: if (!noStandardLibrary)
          */
-        if (!Platform.isWindows && !isStaticLibrary) {
-            if (haveCompiledCpp && !libraries.contains("stdc++")) {
+        if (!Platform.isWindows && !isStaticLibrary && linker != "emcc") {
+            /*
+             * NOTE: Not necessary when we're linking with g++ etc.
+             */
+            /*if (haveCompiledCpp && !libraries.contains("stdc++")) {
                 s.add("-lstdc++")
-            }
+            }*/
 
             if (!libraries.contains("dl")) {
                 s.add("-ldl")
@@ -2929,6 +3021,10 @@ class NativeNode {
                 }
 
                 Fiber.abort("TODO")
+            }
+        } else if (linker == "emcc") {
+            for (path in libraryPaths) {
+                s.add("-L" + path)
             }
         } else {
             for (path in libraryPaths) {
@@ -3021,6 +3117,665 @@ class NativeNode {
              */
             Process.system(command)
         }
+    }
+}
+
+/*
+================================================================================
+ * ~~ [ project generation ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+/* TODO: Audit this to ensure all flags match what we'd get building a normal project.
+ * Until then, consider this experimental... don't use makefile for shipping releases.
+ * Also note that you're baking in the project config (debug vs. release, files, etc).
+ * TODO: Hardcodes a bunch of things - should use standard variables like CC, LD, etc.
+ */
+class MakefileNode {
+    construct new(project, name) {
+        if (project == null) {
+            _project = Project.new(null, name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+        _verbose = _project.verbose
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    // Cannot be changed, as we're in the projects node list.
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    verbose { _verbose }
+    verbose=(value) { _verbose = value }
+
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
+
+    build() {
+        if (verbose && project.printBanners) {
+            System.print("-" * 80)
+            System.print("\tGenerating makefile for %(project.name)")
+            System.print("-" * 80)
+        }
+
+        var native_nodes = project.nodes.where { |node| node is NativeNode }.toList
+        var file
+
+        if (true) {
+            file = File.open("Makefile", "w")
+        } else {
+            file = File.stdout
+        }
+
+        file.write([
+            "# ==============================================================================",
+            "# Automatically generated makefile for %(project.name)",
+            "# ==============================================================================",
+            "",
+            ".PHONY: all clean",
+            "\n",
+        ].join("\n"))
+
+        var all_targets = []
+        var all_clean_files = []
+        var all_dependency_files = []
+
+        for (node in native_nodes) {
+            all_targets.add(MakefileNode.targetName_(node))
+        }
+
+        file.write("all: %(all_targets.join(" "))\n\n")
+
+        for (node in native_nodes) {
+            MakefileNode.generateNodeRules_(file, node, all_clean_files, all_dependency_files)
+        }
+
+        file.write([
+            "# ==============================================================================",
+            "# Cleanup",
+            "# ==============================================================================",
+            "clean:",
+            "",
+        ].join("\n"))
+
+        // Makefiles can choke on massively long lines, so we split the clean payload.
+        var chunk_size = 8
+
+        for (i in 0...(all_clean_files.count / chunk_size).ceil) {
+            var chunk = all_clean_files[(i * chunk_size)...((i + 1) * chunk_size).min(all_clean_files.count)]
+            file.write("\trm -f %(chunk.join(" "))\n")
+        }
+
+        if (project.extraCleanFiles.count > 0) {
+            file.write("\trm -f %(project.extraCleanFiles.join(" "))\n")
+        }
+
+        file.write("\n")
+
+        if (all_dependency_files.count > 0) {
+            file.write("-include %(all_dependency_files.join(" "))\n")
+        }
+
+        if (file != File.stdout) {
+            file.close()
+        }
+    }
+
+    clean() {
+        Path.tryRemove("Makefile")
+    }
+
+    finish(command) {
+        //
+    }
+
+    static targetName_(node) {
+        /*
+         * We assume here that we're building Unix/ELF binaries.
+         */
+        if (node.isExecutable) {
+            return node.name + node.executableExtension
+        } else if (node.isSharedLibrary) {
+            return "lib%(node.name)%(node.sharedLibraryExtension)"
+        } else if (node.isStaticLibrary) {
+            return "lib%(node.name)%(node.staticLibraryExtension)"
+        } else {
+            return node.name + node.objectExtension
+        }
+    }
+
+    static getCompiler_(node, src) {
+        return node.compilerName_(src).trim()
+    }
+
+    static getLinker_(node) {
+        return node.linkerName_.trim()
+    }
+
+    static compilerFlags_(node) {
+        /*
+         * TODO: Remove this and just append to node.compilerCommandLine_
+         */
+        return (node.compilerIncludePaths_ +
+                node.compilerOptimization_ +
+                node.compilerDefines_ +
+                node.compilerUndefines_ +
+                node.compilerWarningFlags_ +
+                node.compilerPlatformFlags_ +
+                node.compilerSanitizerFlags_ +
+                node.compilerExtraFlags_).trim() +
+
+                // Auto-dependency generation flags.
+                " -MMD -MP"
+    }
+
+    static linkerFlags_(node) {
+        /*
+         * TODO: Remove this and just append to node.linkerCommandLine_
+         */
+        return (node.linkerPlatformFlags_ +
+                node.linkerSanitizerFlags_ +
+                node.linkerExtraFlags_ +
+                node.linkerLibraries_ +
+                node.linkerLibraryPaths_).trim().replace("-rpath '$ORIGIN", "-rpath '$$ORIGIN")
+    }
+
+    static generateNodeRules_(file, node, clean_files, dependency_files) {
+        var target = MakefileNode.targetName_(node)
+        var cc_flags = MakefileNode.compilerFlags_(node)
+        var ld_flags = MakefileNode.linkerFlags_(node)
+
+        var objs = []
+        file.write("#\n# ----- [ TARGET: %(node.name) ]\n#\n")
+
+        // Write explicit compilation rules for each source file.
+        for (src in node.sources) {
+            var obj = node.sourceToObject_(src)
+            var dep = node.sourceToMakefileDependency_(src)
+
+            var compiler = MakefileNode.getCompiler_(node, src)
+
+            objs.add(obj)
+            clean_files.add(obj)
+            dependency_files.add(dep)
+
+            file.write("%(obj): %(src)\n")
+
+            // Write out the final command line to the makefile.
+            var cmd = "%(compiler) %(cc_flags) -c $< -o $@"
+
+            if (node.finalizeCompilerCommandLine != null) {
+                cmd = node.finalizeCompilerCommandLine.call(src, cmd)
+
+                if (!(cmd is String)) {
+                    Fiber.abort("%(node).finalizeCompilerCommandLine must return a string!")
+                }
+            }
+
+            file.write("\t%(cmd)\n\n")
+        }
+
+        /* Append any extra objects (e.g. precompiled binaries or assembly outputs).
+         * If the filename has no extension, append the platform;s object extension.
+         */
+        for (extra in node.extraObjects) {
+            if (extra.endsWith(node.objectExtension)) {
+                objs.add(extra)
+            } else {
+                objs.add(node.sourceToObject_(extra))
+            }
+        }
+
+        for (extra in node.extraCleanFiles) {
+            clean_files.add(extra)
+        }
+
+        clean_files.add(target)
+        var obj_str = objs.join(" ")
+
+        // Write the linking rule to the makefile.
+        file.write("%(target): %(obj_str)\n")
+
+        var linker = MakefileNode.getLinker_(node)
+
+        if (node.isStaticLibrary) {
+            var cmd = "%(linker) $@ $^"
+
+            if (node.finalizeLinkerCommandLine != null) {
+                cmd = node.finalizeLinkerCommandLine.call(cmd)
+
+                if (!(cmd is String)) {
+                    Fiber.abort("%(node).finalizeLinkerCommandLine must return a string!")
+                }
+            }
+
+            file.write("\t%(cmd)\n\n")
+        } else {
+            var out_flag
+
+            if (node.isSharedLibrary && node.linker != "emcc") {
+                out_flag = "-fPIC -shared -o $@"
+            } else {
+                out_flag = "-o $@"
+            }
+
+            var cmd = "%(linker) %(out_flag) $^ %(ld_flags)"
+
+            if (node.finalizeLinkerCommandLine != null) {
+                cmd = node.finalizeLinkerCommandLine.call(cmd)
+
+                if (!(cmd is String)) {
+                    Fiber.abort("%(node).finalizeLinkerCommandLine must return a string!")
+                }
+            }
+
+            file.write("\t%(cmd)\n")
+
+            if (node.release && node.stripDebugSymbols) {
+                if (Platform.isMacOSX) {
+                    file.write("\tstrip $@\n")
+                } else if (!Platform.isWindows) {
+                    file.write("\tstrip -s $@\n")
+                }
+            }
+
+            file.write("\n")
+        }
+    }
+}
+
+/* TODO: Audit this to ensure all flags match what we'd get building a normal project.
+ * Until then, consider this experimental... don't use makefile for shipping releases.
+ * Also note that you're baking in the project config (debug vs. release, files, etc).
+ *
+ * TODO: Rebuild on top of a class that manipulates Visual Studio projects/solutions,
+ * which in turn would be built on top of a class capable of reading and writing XML.
+ */
+class VisualStudioNode {
+    construct new(project, name) {
+        if (project == null) {
+            _project = Project.new(null, name)
+        } else {
+            _project = project
+        }
+
+        _name = name != null ? name : _project.name.toString
+        _verbose = _project.verbose
+
+        /* TODO: Defaulting to Visual Studio 2022 (v143).
+         * Find the latest (or oldest) version installed.
+         */
+        _vsVersion = "2022"
+        _platformToolset = "v143"
+
+        _project.nodes.add(this)
+    }
+
+    toString { "%(type)(%(name))" }
+
+    project { _project }
+
+    name { _name }
+    name=(value) { _name = value }
+
+    verbose { _verbose }
+    verbose=(value) { _verbose = value }
+
+    quiet { !_verbose }
+    quiet=(value) { _verbose = !value }
+
+    vsVersion { _vsVersion }
+    vsVersion=(value) { _vsVersion = value }
+
+    platformToolset { _platformToolset }
+    platformToolset=(value) { _platformToolset = value }
+
+    build() {
+        if (verbose && project.printBanners) {
+            System.print("-" * 80)
+            System.print("\tGenerating Visual Studio %(vsVersion) solution for %(project.name)")
+            System.print("-" * 80)
+        }
+
+        var native_nodes = project.nodes.where { |node| node is NativeNode }.toList
+
+        if (native_nodes.isEmpty) {
+            if (verbose) {
+                System.print("No native targets found. Skipping solution generation.")
+            }
+
+            return
+        }
+
+        generateSolution_(native_nodes)
+
+        for (node in native_nodes) {
+            generateProject_(node)
+            generateFilters_(node)
+        }
+    }
+
+    clean() {
+        Path.tryRemove(name + ".sln")
+
+        for (node in project.nodes.where { |node| node is NativeNode }.toList) {
+            Path.tryRemove(node.name + ".vcxproj")
+            Path.tryRemove(node.name + ".vcxproj.filters")
+            Path.tryRemove(node.name + ".vcxproj.user")
+        }
+    }
+
+    finish(command) {
+        //
+    }
+
+    // ===== [ private generators ] ============================================
+
+    generateSolution_(nodes) {
+        var file
+
+        if (true) {
+            file = File.open(name + ".sln", "w")
+        } else {
+            file = File.stdout
+        }
+
+        /* XXX TODO FIXME: Tie this into vsVersion and platformToolset.
+         */
+        file.write("\r\nMicrosoft Visual Studio Solution File, Format Version 12.00\r\n")
+        file.write("# Visual Studio Version 17\r\n")
+
+        for (node in nodes) {
+            var projectGuid = StringUtil.generateVisualStudioGUID(node.name)
+
+            /* The standard C++ project type GUID in Visual Studio.
+             */
+            file.write("Project(\"{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\") = \"%(node.name)\", \"%(node.name).vcxproj\", \"{%(projectGuid)}\"\r\n")
+            file.write("EndProject\r\n")
+        }
+
+        file.write("Global\r\n")
+        file.write("\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\r\n")
+
+        var configs =
+        [
+            "Debug|x64",
+            "Release|x64",
+            "Debug|x86",
+            "Release|x86",
+        ]
+
+        for (config in configs) {
+            file.write("\t\t%(config) = %(config)\r\n")
+        }
+
+        file.write("\tEndGlobalSection\r\n")
+        file.write("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\r\n")
+
+        for (node in nodes) {
+            var project_guid = StringUtil.generateVisualStudioGUID(node.name)
+
+            for (config in configs) {
+                /*
+                 * MSBuild requires mapping the Solution's 'x86' string to the Project's 'Win32' string.
+                 */
+                var project_config = config.replace("x86", "Win32")
+
+                file.write("\t\t{%(project_guid)}.%(config).ActiveCfg = %(project_config)\r\n")
+                file.write("\t\t{%(project_guid)}.%(config).Build.0 = %(project_config)\r\n")
+            }
+        }
+
+        file.write("\tEndGlobalSection\r\n")
+
+        file.write("\tGlobalSection(SolutionProperties) = preSolution\r\n")
+        file.write("\t\tHideSolutionNode = FALSE\r\n")
+        file.write("\tEndGlobalSection\r\n")
+
+        file.write("EndGlobal\r\n")
+
+        if (file != File.stdout) {
+            file.close()
+        }
+    }
+
+    generateProject_(node) {
+        var file
+
+        if (true) {
+            file = File.open(node.name + ".vcxproj", "w")
+        } else {
+            file = File.stdout
+        }
+
+        var project_guid = StringUtil.generateVisualStudioGUID(node.name)
+        var config_type = getConfigurationType_(node)
+
+        file.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n")
+        file.write("<Project DefaultTargets=\"Build\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\r\n")
+
+        // Project Configurations.
+        file.write("  <ItemGroup Label=\"ProjectConfigurations\">\r\n")
+
+        var configs =
+        [
+            "Debug|x64",
+            "Release|x64",
+            "Debug|Win32",
+            "Release|Win32",
+        ]
+
+        for (config in configs) {
+            var split = config.split("|")
+
+            file.write("    <ProjectConfiguration Include=\"%(config)\">\r\n")
+            file.write("      <Configuration>%(split[0])</Configuration>\r\n")
+            file.write("      <Platform>%(split[1])</Platform>\r\n")
+            file.write("    </ProjectConfiguration>\r\n")
+        }
+
+        file.write("  </ItemGroup>\r\n")
+
+        // Globals.
+        file.write("  <PropertyGroup Label=\"Globals\">\r\n")
+        file.write("    <ProjectGuid>{%(project_guid)}</ProjectGuid>\r\n")
+        file.write("    <Keyword>Win32Proj</Keyword>\r\n")
+        file.write("    <RootNamespace>%(node.name)</RootNamespace>\r\n")
+        file.write("    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>\r\n")
+        file.write("  </PropertyGroup>\r\n")
+
+        file.write("  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.Default.props\" />\r\n")
+
+        // Configuration specific properties.
+        for (config in configs) {
+            var is_debug = config.startsWith("Debug") ? "true" : "false"
+            var is_rel = config.startsWith("Release") ? "true" : "false"
+            var opt_lto = (is_rel == "true" && node.linkTimeOptimization && !node.isStaticLibrary) ? "true" : "false"
+
+            file.write("  <PropertyGroup Condition=\"'$(Configuration)|$(Platform)'=='%(config)'\" Label=\"Configuration\">\r\n")
+            file.write("    <ConfigurationType>%(config_type)</ConfigurationType>\r\n")
+            file.write("    <UseDebugLibraries>%(is_debug)</UseDebugLibraries>\r\n")
+            file.write("    <PlatformToolset>%(platformToolset)</PlatformToolset>\r\n")
+            file.write("    <WholeProgramOptimization>%(opt_lto)</WholeProgramOptimization>\r\n")
+            file.write("    <CharacterSet>Unicode</CharacterSet>\r\n")
+            file.write("  </PropertyGroup>\r\n")
+        }
+
+        file.write("  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.props\" />\r\n")
+
+        // Combine /bigobj with any user-defined extra compiler flags.
+        var extra_flags = ["/bigobj"]
+
+        for (flag in node.extraCompilerFlags) {
+            extra_flags.add(flag)
+        }
+
+        var additionalOptions = extra_flags.join(" ") + " \%(AdditionalOptions)"
+
+        // ItemDefinitionGroup (Compiler/Linker flags).
+        var inc_dirs = node.includePaths.join(";")
+
+        if (inc_dirs != "") {
+            inc_dirs = inc_dirs + ";\%(AdditionalIncludeDirectories)"
+        }
+
+        var preprocessor_str = getPreprocessorDefs_(node)
+        var lib_dirs = node.libraryPaths.join(";")
+
+        if (lib_dirs != "") {
+            lib_dirs = lib_dirs + ";\%(AdditionalLibraryDirectories)"
+        }
+
+        var deps = node.libraries.map { |l| l + ".lib" }.join(";")
+
+        if (deps != "") {
+            deps = deps + ";\%(AdditionalDependencies)"
+        }
+
+        for (config in configs) {
+            var is_debug = config.startsWith("Debug")
+            var platform = config.endsWith("x64") ? "x64" : "Win32"
+            var crt = is_debug ? (node.dynamicCRT ? "MultiThreadedDebugDLL" : "MultiThreadedDebug") : (node.dynamicCRT ? "MultiThreadedDLL" : "MultiThreaded")
+            var opt_level = is_debug ? "Disabled" : (node.optimizeForCodeSize ? "MinSpace" : "MaxSpeed")
+
+            file.write("  <ItemDefinitionGroup Condition=\"'$(Configuration)|$(Platform)'=='%(config)'\">\r\n")
+            file.write("    <ClCompile>\r\n")
+            file.write("      <WarningLevel>%(getWarningLevelString_(node.warningLevel))</WarningLevel>\r\n")
+            file.write("      <Optimization>%(opt_level)</Optimization>\r\n")
+            if (inc_dirs != "") file.write("      <AdditionalIncludeDirectories>%(inc_dirs)</AdditionalIncludeDirectories>\r\n")
+            file.write("      <PreprocessorDefinitions>%(is_debug ? "DEBUG" : "NDEBUG");%(preprocessor_str)%(platform == "x64" ? "WIN64;" : "WIN32;")%(config_type == "Application" ? "_CONSOLE;" : "")%(preprocessor_str)</PreprocessorDefinitions>\r\n")
+            file.write("      <RuntimeLibrary>%(crt)</RuntimeLibrary>\r\n")
+            file.write("      <RuntimeTypeInfo>%(node.enableRTTI ? "true" : "false")</RuntimeTypeInfo>\r\n")
+            file.write("      <ExceptionHandling>%(node.enableExceptions ? "Sync" : "false")</ExceptionHandling>\r\n")
+            file.write("      <AdditionalOptions>%(additionalOptions)</AdditionalOptions>\r\n")
+            file.write("    </ClCompile>\r\n")
+
+            if (!node.isStaticLibrary) {
+                file.write("    <Link>\r\n")
+                file.write("      <SubSystem>%(node.isGUI ? "Windows" : "Console")</SubSystem>\r\n")
+                if (lib_dirs != "") file.write("      <AdditionalLibraryDirectories>%(lib_dirs)</AdditionalLibraryDirectories>\r\n")
+                if (deps != "") file.write("      <AdditionalDependencies>%(deps)</AdditionalDependencies>\r\n")
+                file.write("      <GenerateDebugInformation>%(is_debug ? "true" : "false")</GenerateDebugInformation>\r\n")
+                file.write("    </Link>\r\n")
+            }
+
+            file.write("  </ItemDefinitionGroup>\r\n")
+        }
+
+        // Source Files.
+        file.write("  <ItemGroup>\r\n")
+
+        for (src in node.sources) {
+            // Very rudimentary distinction, but fits standard C/C++ projects.
+            if (src.endsWith(".c") || src.endsWith(".cpp") || src.endsWith(".cc") || src.endsWith(".cxx")) {
+                file.write("    <ClCompile Include=\"%(src)\" />\r\n")
+            } else if (src.endsWith(".h") || src.endsWith(".hpp")) {
+                file.write("    <ClInclude Include=\"%(src)\" />\r\n")
+            } else {
+                file.write("    <None Include=\"%(src)\" />\r\n")
+            }
+        }
+
+        file.write("  </ItemGroup>\r\n")
+
+        file.write("  <Import Project=\"$(VCTargetsPath)\\Microsoft.Cpp.targets\" />\r\n")
+        file.write("</Project>\r\n")
+
+        if (file != File.stdout) {
+            file.close()
+        }
+    }
+
+    generateFilters_(node) {
+        var file
+
+        if (true) {
+            file = File.open(node.name + ".vcxproj.filters", "w")
+        } else {
+            file = File.stdout
+        }
+
+        file.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n")
+        file.write("<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">\r\n")
+
+        file.write("  <ItemGroup>\r\n")
+        file.write("    <Filter Include=\"Source Files\">\r\n")
+        file.write("      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>\r\n")
+        file.write("    </Filter>\r\n")
+        file.write("    <Filter Include=\"Header Files\">\r\n")
+        file.write("      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>\r\n")
+        file.write("    </Filter>\r\n")
+        file.write("  </ItemGroup>\r\n")
+
+        file.write("  <ItemGroup>\r\n")
+
+        for (src in node.sources) {
+            if (src.endsWith(".c") || src.endsWith(".cpp") || src.endsWith(".cc") || src.endsWith(".cxx")) {
+                file.write("    <ClCompile Include=\"%(src)\">\r\n")
+                file.write("      <Filter>Source Files</Filter>\r\n")
+                file.write("    </ClCompile>\r\n")
+            } else if (src.endsWith(".h") || src.endsWith(".hpp")) {
+                file.write("    <ClInclude Include=\"%(src)\">\r\n")
+                file.write("      <Filter>Header Files</Filter>\r\n")
+                file.write("    </ClInclude>\r\n")
+            }
+        }
+
+        file.write("  </ItemGroup>\r\n")
+        file.write("</Project>\r\n")
+
+        if (file != File.stdout) {
+            file.close()
+        }
+    }
+
+    getConfigurationType_(node) {
+        if (node.isSharedLibrary) {
+            return "DynamicLibrary"
+        }
+
+        if (node.isStaticLibrary) {
+            return "StaticLibrary"
+        }
+
+        return "Application"
+    }
+
+    getPreprocessorDefs_(node) {
+        var list = []
+
+        for (def in node.defines) {
+            if (def is List) {
+                list.add("%(def[0])=%(def[1])")
+            } else if (def.contains("=")) {
+                list.add(def)
+            } else {
+                list.add(def + "=1")
+            }
+        }
+
+        if (list.isEmpty) {
+            return ""
+        }
+
+        return list.join(";") + ";"
+    }
+
+    getWarningLevelString_(level) {
+        if (level < 0) return "TurnOffAllWarnings" // /w
+        if (level == 0) return "Level1"            // /W1
+        if (level == 1) return "Level2"            // /W2
+        if (level == 2) return "Level3"            // /W3
+        if (level == 3) return "Level4"            // /W4
+        return "EnableAllWarnings"                 // /Wall
     }
 }
 
@@ -3272,7 +4027,7 @@ class ProcessNode {
             if (finalizeCommand != null) {
                 finish_command = finalizeCommand.call("finish_build", finish_command)
 
-                if (!(command is String || command == null)) {
+                if (!(finish_command is String || finish_command == null)) {
                     Fiber.abort("%(this).finalizeCommand must return a string!")
                 }
             }
@@ -3305,7 +4060,7 @@ class ProcessNode {
             if (finalizeCommand != null) {
                 finish_command = finalizeCommand.call("finish_clean", finish_command)
 
-                if (!(command is String || command == null)) {
+                if (!(finish_command is String || finish_command == null)) {
                     Fiber.abort("%(this).finalizeCommand must return a string!")
                 }
             }
@@ -3922,6 +4677,7 @@ var main = Fn.new {
     var project = Project.new(null, "wrench")
     project.configure(Config.new().parseArgs(WrenVM.self.commandLine[firstArg..-1]))
 
+    // Includes all standard library modules in the executable for easier distribution and use.
     var unity = WrenVM.self.commandLine.any { |arg| arg.trimStart("-") == "builtin-stdlib" }
 
     if (unity) {
@@ -4027,12 +4783,18 @@ var main = Fn.new {
 
     project.define("WRENCH_USE_STB_SPRINTF")
 
+    // Enable building the script runner alone, without any of our standard library modules.
+    var no_stdlib = WrenVM.self.commandLine.any { |arg| arg.trimStart("-") == "no-stdlib" }
+
+    if (no_stdlib) {
+        project.define("WREN_OPT_META", 0)
+        project.define("WREN_OPT_RANDOM", 0)
+    }
+
     if (false) {
         project.define("WREN_NAN_TAGGING", 0)
         project.define("WREN_COMPUTED_GOTO", 0)
         project.define("WREN_SWITCHED_GOTO", 0)
-        project.define("WREN_OPT_META", 0)
-        project.define("WREN_OPT_RANDOM", 0)
     }
 
     var wren = NativeNode.new(project, "wren", "static_library")
@@ -4062,7 +4824,7 @@ var main = Fn.new {
 
     if (unity) {
         run_wren.define("WRENCH_STDLIB")
-    } else {
+    } else if (!no_stdlib) {
         var node
 
         node = NativeNode.new(project, "file", "shared_library")
