@@ -18,6 +18,7 @@ del *.lib /q
 del *.obj /q
 del *.dll /q
 del *.exp /q
+del *.ilk /q
 
 del wrench_config.c /q
 del wrench_project.c /q

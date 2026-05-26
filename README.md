@@ -18,7 +18,7 @@ By using the extended VM, you get access to:
 # Getting Started (a Wren-first approach)
 
 Linux/MacOS users can type `sh build.sh` to bootstrap, then `./run_wren project build debug builtin-stdlib` to patch in a few additional features and optimizations to the vanilla core Wren VM.
-Windows users must use a developer terminal session to run the command at the top of `build.sh`, or run the experimental `build.bat`.
+Windows users follow roughly the same process via `.\build.bat` and `.\wrench_main.exe project build debug builtin-stdlib` in a developer terminal session.
 If git is not installed, external standard library dependencies must be copied into either the `wrench` or `../extern` directory.
 
 This will give you an executable that can run arbitrary scripts or native libraries, with every Wrench standard library module already built-in.
@@ -26,7 +26,7 @@ This will give you an executable that can run arbitrary scripts or native librar
 
 # Getting Started (a C-first approach)
 
-If you already have an engine you want to extend with Wren scripting, simply add the following C code to your project:
+If you already have a native codebase you want to extend with Wren scripting, simply add the following C code to your project:
 
 ```c
 #include <wren.c>
@@ -35,7 +35,7 @@ If you already have an engine you want to extend with Wren scripting, simply add
 #include <wrench/wrench.h>
 ```
 
-An excellent example of bridging C with wren is available in `wrench_image.c` or `wrench_file.c`, starting at the bottom and going upwards.
+An excellent example of bridging C with wren is available in `wrench_image.c` or `wrench_file.c`, starting at the bottom of the file and going upwards.
 
 # TODO
 

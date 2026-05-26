@@ -16,6 +16,7 @@ rm -rf *.o
 rm -rf *.so
 rm -rf *.dSYM
 rm -rf *.dwo
+rm -rf *.d
 
 rm -rf wrench_config.c
 rm -rf wrench_project.c
