@@ -41,8 +41,10 @@ extern "C" {
 typedef void* (*wrenFileReadFn)(WrenVM* vm, const char* name, size_t* size);
 typedef void  (*wrenFileFreeFn)(WrenVM* vm, void* data, size_t size);
 
-typedef bool (*wrenLibraryInitFn)(WrenVM* vm);
-typedef void (*wrenLibraryQuitFn)(void);
+typedef bool (*wrenGlobalInitFn)(WrenVM* vm);
+typedef void (*wrenGlobalQuitFn)(void);
+
+typedef void (*wrenLocalQuitFn)(WrenVM* vm);
 
 /*
 ================================================================================
@@ -433,12 +435,12 @@ WRENCH_DECL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs));
 
 /* Functions that are called on the creation and destruction of each VM.
  */
-WRENCH_DECL(void, RegisterGlobalInitFunction, (wrenLibraryInitFn init));
-WRENCH_DECL(void, RegisterGlobalQuitFunction, (wrenLibraryQuitFn quit));
+WRENCH_DECL(void, RegisterGlobalInitFunction, (wrenGlobalInitFn init));
+WRENCH_DECL(void, RegisterGlobalQuitFunction, (wrenGlobalQuitFn quit));
 
 /* Register function that's called on the destruction of a specified VM.
  */
-// TODO: RegisterLocalQuitFunction
+WRENCH_DECL(void, RegisterLocalQuitFunction, (WrenVM* vm, wrenLocalQuitFn quit));
 
 /* Enabled by default - may be disabled for security hardening purposes.
  */
@@ -1249,6 +1251,9 @@ typedef struct WrenchContext
     WrenchMemoryPool memory_pool;
     FILE* output_file;
 
+    wrenLocalQuitFn quitFunc[16];
+    size_t quitFuncCount;
+
     // stdlib handles for performance.
     WrenHandle* FltVector_handle;
 
@@ -1580,6 +1585,14 @@ static const char* wrenchSourceCodeCopyEx(WrenchContext* context, const char* so
 static const char* wrenchSourceCodeCopy(WrenchContext* context, const char* source)
 {
     return wrenchSourceCodeCopyEx(context, source, wrench_strlen(source));
+}
+
+static void wrenchRegisterLocalQuitFunction(WrenchContext* context, wrenLocalQuitFn func)
+{
+    wrench_assert(func != NULL, ""); // TODO: Don't register functions already in array.
+    wrench_assert(context->quitFuncCount < WRENCH_ARRAY_COUNT(context->quitFunc), "");
+
+    context->quitFunc[context->quitFuncCount++] = func;
 }
 
 static bool wrenchGetForeignLibraryLoadEnabled(WrenchContext* context)
@@ -2699,8 +2712,8 @@ static void wrenchFreeContext(WrenchContext* context)
             char quit_name[1024];
             wrench_snprintf(quit_name, sizeof(quit_name), "%sWrenQuit", node->name);
 
-            wrenLibraryQuitFn quit = (
-            wrenLibraryQuitFn)wrenchLibraryFunc(context, node->library, (const char*)quit_name);
+            wrenGlobalQuitFn quit = (
+            wrenGlobalQuitFn)wrenchLibraryFunc(context, node->library, (const char*)quit_name);
 
             if (quit != NULL)
             {
@@ -2762,10 +2775,10 @@ static void wrenchFreeContext(WrenchContext* context)
     wrench_free(context);
 }
 
-static wrenLibraryInitFn wrenchGlobalInitFunc[16];
+static wrenGlobalInitFn wrenchGlobalInitFunc[16];
 static size_t wrenchGlobalInitFuncCount;
 
-static wrenLibraryQuitFn wrenchGlobalQuitFunc[16];
+static wrenGlobalQuitFn wrenchGlobalQuitFunc[16];
 static size_t wrenchGlobalQuitFuncCount;
 
 /* Standard library modules are normally DLLs, but we can include them inline.
@@ -3088,20 +3101,24 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         return;
     }
 
-    if (call_global_quit_funcs)
-    {
-        /* TODO: Call in reverse order?
-         */
-        for (size_t i = 0; i < wrenchGlobalQuitFuncCount; i++)
-        {
-            wrench_assert(wrenchGlobalQuitFunc[i] != NULL, "");
-            wrenchGlobalQuitFunc[i]();
-        }
-    }
-
     WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
     wrench_assert(context != NULL, "");
     wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
+
+    for (size_t i = context->quitFuncCount; i > 0; i--)
+    {
+        wrench_assert(context->quitFunc[i - 1] != NULL, "");
+        context->quitFunc[i - 1](vm);
+    }
+
+    if (call_global_quit_funcs)
+    {
+        for (size_t i = wrenchGlobalQuitFuncCount; i > 0; i--)
+        {
+            wrench_assert(wrenchGlobalQuitFunc[i - 1] != NULL, "");
+            wrenchGlobalQuitFunc[i - 1]();
+        }
+    }
 
     // Release the standard library handles we keep for performance boosts.
     if (context->FltVector_handle != NULL)
@@ -3202,7 +3219,7 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
     #endif /* WRENCH_STDLIB */
 }
 
-WRENCH_IMPL(void, RegisterGlobalInitFunction, (wrenLibraryInitFn init))
+WRENCH_IMPL(void, RegisterGlobalInitFunction, (wrenGlobalInitFn init))
 {
     wrench_assert(init != NULL, ""); // TODO: Don't register funcs that are already in array.
     wrench_assert(wrenchGlobalInitFuncCount < WRENCH_ARRAY_COUNT(wrenchGlobalInitFunc), "");
@@ -3210,12 +3227,24 @@ WRENCH_IMPL(void, RegisterGlobalInitFunction, (wrenLibraryInitFn init))
     wrenchGlobalInitFunc[wrenchGlobalInitFuncCount++] = init;
 }
 
-WRENCH_IMPL(void, RegisterGlobalQuitFunction, (wrenLibraryQuitFn quit))
+WRENCH_IMPL(void, RegisterGlobalQuitFunction, (wrenGlobalQuitFn quit))
 {
     wrench_assert(quit != NULL, ""); // TODO: Don't register funcs that are already in array.
     wrench_assert(wrenchGlobalQuitFuncCount < WRENCH_ARRAY_COUNT(wrenchGlobalQuitFunc), "");
 
     wrenchGlobalQuitFunc[wrenchGlobalQuitFuncCount++] = quit;
+}
+
+WRENCH_IMPL(void, RegisterLocalQuitFunction, (WrenVM* vm, wrenLocalQuitFn quit))
+{
+    if (vm != NULL)
+    {
+        WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+        wrench_assert(context != NULL, "");
+        wrench_assert(context->magic == WRENCH_MAGIC_TAG, "");
+
+        wrenchRegisterLocalQuitFunction(context, quit);
+    }
 }
 
 WRENCH_IMPL(bool, GetForeignLibraryLoadEnabled, (WrenVM* vm))
@@ -4250,8 +4279,8 @@ WRENCH_IMPL(WrenLoadModuleResult, DefaultLoadModule, (WrenVM* vm, const char* na
         char init_name[1024];
         wrench_snprintf(init_name, sizeof(init_name), "%sWrenInit", name);
 
-        wrenLibraryInitFn init = ( // TODO: Should lib initialization be able to fail?
-        wrenLibraryInitFn)wrenchLibraryFunc(context, library, (const char*)init_name);
+        wrenGlobalInitFn init = ( // TODO: Should lib initialization be able to fail?
+        wrenGlobalInitFn)wrenchLibraryFunc(context, library, (const char*)init_name);
 
         if (init != NULL)
         {

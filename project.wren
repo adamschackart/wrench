@@ -2561,6 +2561,9 @@ class NativeNode {
                 s.add("-fPIC")
             }
 
+            // TODO: listIncludePaths flag.
+            //s.add("-v")
+
             s.add("-c")
 
             if (compiler == "emcc") {
