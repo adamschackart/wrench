@@ -277,35 +277,42 @@ static void image_Image_save(WrenVM* vm)
         error[0] = '\0';
     }
 
-    if (wrench_strstr(filename, ".png") != NULL)
+    const char* extension = wrench_strrchr(filename, '.');
+
+    if (extension == NULL)
+    {
+        wrench_snprintf(error, sizeof(error), "No encoder for image file \"%s\".", filename);
+        goto error;
+    }
+    else if (wrench_strcmp(extension, ".png") == 0)
     {
         if (!stbi_write_png(filename, self->width, self->height, self->color_channels, self->pixels, self->width * self->color_channels * self->bytes_per_channel))
         {
             goto error;
         }
     }
-    else if (wrench_strstr(filename, ".bmp") != NULL)
+    else if (wrench_strcmp(extension, ".bmp") == 0)
     {
         if (!stbi_write_bmp(filename, self->width, self->height, self->color_channels, self->pixels))
         {
             goto error;
         }
     }
-    else if (wrench_strstr(filename, ".tga") != NULL)
+    else if (wrench_strcmp(extension, ".tga") == 0)
     {
         if (!stbi_write_tga(filename, self->width, self->height, self->color_channels, self->pixels))
         {
             goto error;
         }
     }
-    else if (wrench_strstr(filename, ".hdr") != NULL)
+    else if (wrench_strcmp(extension, ".hdr") == 0)
     {
         if (!stbi_write_hdr(filename, self->width, self->height, self->color_channels, (const float*)self->pixels))
         {
             goto error;
         }
     }
-    else if (wrench_strstr(filename, ".jpg") != NULL)
+    else if (wrench_strcmp(extension, ".jpg") == 0)
     {
         if (!stbi_write_jpg(filename, self->width, self->height, self->color_channels, self->pixels, 0))
         {
@@ -1268,6 +1275,7 @@ WRENCH_EXPORT bool imageWrenInit(WrenVM* vm)
             WREN_METHOD(image, Image, false, clipRect, "(rect)", "(_)");
 
             /* Fast paths for this[x, y] that avoid creation of a temporary FltVector object.
+             * This function trades safety for speed - keep pixel values local and temporary.
              */
             WREN_METHOD(image, Image, false, getPixelFloatRGB, "(x, y, pixel)", "(_,_,_)");
             WREN_METHOD(image, Image, false, getPixelFloatRGBA, "(x, y, pixel)", "(_,_,_)");

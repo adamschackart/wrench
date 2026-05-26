@@ -396,6 +396,17 @@ static void vm_WrenVM_getMethodsInClass(WrenVM* vm)
     wrenForEachMethodInClass(self->vm, moduleName, className, vm_WrenVM_methodVisit, vm);
 }
 
+static void vm_WrenVM_objectHasMethod(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    const char* signature = wrenGetSlotString(vm, 2);
+    const bool result = wrenObjectHasMethod(self->vm, 1, signature);
+
+    wrenSetSlotBool(vm, 0, result);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -535,6 +546,8 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             // TODO: registerGlobalInitFunction
             // TODO: registerGlobalQuitFunction
 
+            // TODO: registerLocalQuitFunction
+
             // NOTE: We don't expose a `foreignLibraryLoadEnabled` property here,
             // to prevent malicious scripts from escaping sandboxed environments.
 
@@ -599,7 +612,10 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             // TODO: getSlotByte
             // TODO: setSlotByte
 
+            // TODO: setSlotNewForeignFast
             // TODO: getMapEntry
+
+            WREN_METHOD(vm, WrenVM, false, objectHasMethod, "(object, signature)", "(_,_)");
 
             // TODO: defaultReallocate
             // TODO: defaultResolveModule

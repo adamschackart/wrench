@@ -588,6 +588,10 @@ WRENCH_DECL(void*, SetSlotNewForeignFast, (WrenVM* vm, int slot, int classSlot, 
  */
 WRENCH_DECL(bool, GetMapEntry, (WrenVM* vm, int mapSlot, int *index, int keySlot, int valueSlot));
 
+/* The functional equivalent of Python's `hasattr`.
+ */
+WRENCH_DECL(bool, ObjectHasMethod, (WrenVM* vm, int slot, const char* signature));
+
 /* WrenConfiguration callbacks.
  */
 WRENCH_DECL(void*, DefaultReallocate, (void* ptr, size_t newSize, void* userData));
@@ -860,6 +864,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #endif
 #ifndef wrench_strncmp
 #define wrench_strncmp strncmp
+#endif
+#ifndef wrench_strrchr
+#define wrench_strrchr strrchr
 #endif
 #ifndef wrench_strstr
 #define wrench_strstr strstr
@@ -1630,7 +1637,7 @@ static void wrenchSetErrorString(WrenchContext* context, const char* error)
     char* dst = context->error;
     char* src = (char*)error;
 
-    while (*src)
+    while (*src && dst < (context->error + length))
     {
         *dst++ = *src++;
     }
@@ -4029,7 +4036,7 @@ WRENCH_IMPL(void, SetSlotByte, (WrenVM* vm, int slot, uint8_t value))
 //#include <wren/src/vm/wren_debug.h>
 //#include <wren/src/vm/wren_math.h>
 //#include <wren/src/vm/wren_primitive.h>
-//#include <wren/src/vm/wren_utils.h>
+#include <wren/src/vm/wren_utils.h>
 #include <wren/src/vm/wren_value.h>
 #include <wren/src/vm/wren_vm.h>
 
@@ -4096,7 +4103,7 @@ WRENCH_IMPL(bool, GetMapEntry, (WrenVM* vm, int mapSlot, int *index, int keySlot
         return false;
     }
 
-    while (IS_UNDEFINED(map->entries[i].key) && i < map->capacity)
+    while (i < map->capacity && IS_UNDEFINED(map->entries[i].key))
     {
         i++;
     }
@@ -4120,6 +4127,36 @@ WRENCH_IMPL(bool, GetMapEntry, (WrenVM* vm, int mapSlot, int *index, int keySlot
     *index = i + 1;
 
     return true;
+}
+
+WRENCH_IMPL(bool, ObjectHasMethod, (WrenVM* vm, int slot, const char* signature))
+{
+    wrench_assert(slot >= 0, "Slot cannot be negative.");
+    wrench_assert(slot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    Value obj = vm->apiStack[slot];
+
+    const int length = (int)wrench_strlen(signature); // XXX O(n) symbol search.
+    const int symbol = wrenSymbolTableFind(&vm->methodNames, signature, length);
+
+    /* If the symbol is -1, the VM has never parsed this signature anywhere
+     * in the entire loaded program, meaning no object can possibly have it.
+     */
+    if (symbol == -1)
+    {
+        return false;
+    }
+
+    ObjClass* classObj = wrenGetClass(vm, obj);
+
+    /* Ensure symbol ID is within the class's method array bounds and implemented.
+     */
+    if (symbol >= classObj->methods.count)
+    {
+        return false;
+    }
+
+    return classObj->methods.data[symbol].type != METHOD_NONE;
 }
 
 WRENCH_IMPL(void*, DefaultReallocate, (void* old_memory, size_t new_size, void* userdata))

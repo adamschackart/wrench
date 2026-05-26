@@ -1211,6 +1211,19 @@ WRENCH_EXPORT bool fileWrenInit(WrenVM* vm)
             WREN_METHOD(file, File, true, open, "(path, mode)", "(_,_)");
             WREN_METHOD(file, File, false, close, "()", "()");
 
+            /* File.open("test.txt", "w") { |file| file.write("Hello world!\n") }
+             */
+            if (!wrenCode(vm,
+
+            "static open(name, mode, fn) {\n"
+                "var file = open(name, mode)\n"
+                "var data = fn.call(file)\n"
+                "file.close()\n"
+                "return data\n"
+            "}\n"
+
+            )) { return false; }
+
             // TODO: isOpen
             // TODO: collect
 
