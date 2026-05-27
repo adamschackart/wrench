@@ -594,6 +594,17 @@ WRENCH_DECL(bool, GetMapEntry, (WrenVM* vm, int mapSlot, int *index, int keySlot
  */
 WRENCH_DECL(bool, ObjectHasMethod, (WrenVM* vm, int slot, const char* signature));
 
+/* Deeper introspection via method enumeration. If you want static methods, you must pass a class.
+ */
+WRENCH_DECL(size_t, ObjectCountMethods, (WrenVM* vm, int slot));
+WRENCH_DECL(void, ObjectListMethodsEx, (WrenVM* vm, int slot, const char** methods));
+WRENCH_DECL(void, ObjectListMethods, (WrenVM* vm, int objSlot, int listSlot, int tempSlot));
+
+/* Traverse the call stack to get the name of the module we're currently executing.
+ * Will return NULL if the VM is idle, or we're executing core code (String etc).
+ */
+WRENCH_DECL(const char*, CurrentModuleName, (WrenVM* vm));
+
 /* WrenConfiguration callbacks.
  */
 WRENCH_DECL(void*, DefaultReallocate, (void* ptr, size_t newSize, void* userData));
@@ -625,6 +636,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
     #include <assert.h>
     #include <ctype.h>
     #include <float.h>
+    #include <inttypes.h>
     #include <limits.h>
     #include <math.h>
     #include <stdlib.h>
@@ -4177,6 +4189,7 @@ WRENCH_IMPL(bool, ObjectHasMethod, (WrenVM* vm, int slot, const char* signature)
     }
 
     ObjClass* classObj = wrenGetClass(vm, obj);
+    wrench_assert(classObj != NULL, "");
 
     /* Ensure symbol ID is within the class's method array bounds and implemented.
      */
@@ -4186,6 +4199,131 @@ WRENCH_IMPL(bool, ObjectHasMethod, (WrenVM* vm, int slot, const char* signature)
     }
 
     return classObj->methods.data[symbol].type != METHOD_NONE;
+}
+
+WRENCH_IMPL(size_t, ObjectCountMethods, (WrenVM* vm, int slot))
+{
+    wrench_assert(slot >= 0, "Slot cannot be negative.");
+    wrench_assert(slot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    Value obj = vm->apiStack[slot];
+
+    ObjClass* classObj = wrenGetClass(vm, obj);
+    wrench_assert(classObj != NULL, "");
+
+    size_t count = 0;
+
+    for (int i = 0; i < classObj->methods.count; i++)
+    {
+        if (classObj->methods.data[i].type != METHOD_NONE)
+        {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+WRENCH_IMPL(void, ObjectListMethodsEx, (WrenVM* vm, int slot, const char** methods))
+{
+    wrench_assert(slot >= 0, "Slot cannot be negative.");
+    wrench_assert(slot < wrenGetSlotCount(vm), "Not that many slots.");
+
+    Value obj = vm->apiStack[slot];
+
+    ObjClass* classObj = wrenGetClass(vm, obj);
+    wrench_assert(classObj != NULL, "");
+
+    size_t index = 0;
+
+    for (int i = 0; i < classObj->methods.count; i++)
+    {
+        if (classObj->methods.data[i].type != METHOD_NONE)
+        {
+            // The method array index inherently mirrors
+            // the VM's `methodNames` symbol table index.
+        #if 1
+            wrench_assert(i < vm->methodNames.count, "%i", i);
+            if (1)
+        #else
+            if (i < vm->methodNames.count)
+        #endif
+            {
+                methods[index++] = vm->methodNames.data[i]->value;
+            }
+            else
+            {
+                methods[index++] = "<UNKNOWN>";
+            }
+        }
+    }
+}
+
+WRENCH_IMPL(void, ObjectListMethods, (WrenVM* vm, int objSlot, int listSlot, int tempSlot))
+{
+    wrench_assert(objSlot >= 0, "Slot cannot be negative.");
+    wrench_assert(objSlot < wrenGetSlotCount(vm), "not that many slots.");
+
+    wrench_assert(listSlot >= 0, "Slot cannot be negative.");
+    wrench_assert(listSlot < wrenGetSlotCount(vm), "not that many slots.");
+
+    wrench_assert(tempSlot >= 0, "Slot cannot be negative.");
+    wrench_assert(tempSlot < wrenGetSlotCount(vm), "not that many slots.");
+
+    Value obj = vm->apiStack[objSlot];
+
+    ObjClass* classObj = wrenGetClass(vm, obj);
+    wrench_assert(classObj != NULL, "");
+
+    for (int i = 0; i < classObj->methods.count; i++)
+    {
+        if (classObj->methods.data[i].type != METHOD_NONE)
+        {
+            // The method array index inherently mirrors
+            // the VM's `methodNames` symbol table index.
+        #if 1
+            wrench_assert(i < vm->methodNames.count, "%i", i);
+            if (1)
+        #else
+            if (i < vm->methodNames.count)
+        #endif
+            {
+                /* Allocate the string into the scratch slot, then append it to the list.
+                 */
+                wrenSetSlotString(vm, tempSlot, vm->methodNames.data[i]->value);
+                wrenInsertInList(vm, listSlot, -1, tempSlot);
+            }
+            else
+            {
+                wrenSetSlotString(vm, tempSlot, "<UNKNOWN>");
+                wrenInsertInList(vm, listSlot, -1, tempSlot);
+            }
+        }
+    }
+}
+
+WRENCH_IMPL(const char*, CurrentModuleName, (WrenVM* vm))
+{
+    if (vm->fiber == NULL || vm->fiber->numFrames == 0)
+    {
+        return NULL;
+    }
+
+    CallFrame* frame = &vm->fiber->frames[vm->fiber->numFrames - 1];
+
+    if (frame->closure == NULL || frame->closure->fn == NULL)
+    {
+        return NULL;
+    }
+
+    ObjModule* module = frame->closure->fn->module;
+
+    if (module == NULL || module->name == NULL)
+    {
+        return NULL;
+    }
+
+    return module->name->value;
 }
 
 WRENCH_IMPL(void*, DefaultReallocate, (void* old_memory, size_t new_size, void* userdata))

@@ -407,6 +407,107 @@ static void vm_WrenVM_objectHasMethod(WrenVM* vm)
     wrenSetSlotBool(vm, 0, result);
 }
 
+static void vm_WrenVM_objectCountMethods(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    const size_t result = wrenObjectCountMethods(self->vm, 1);
+    wrench_assert(result <= UINT32_MAX, "%" PRIu64, (uint64_t)result);
+
+    wrenSetSlotUnsignedInt(vm, 0, (unsigned int)result);
+}
+
+static void vm_WrenVM_objectListMethods(WrenVM* vm)
+{
+    #if WRENCH_DEBUG
+    {
+        vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+        WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+        wrench_assert(self->vm == vm, "TODO");
+    }
+    #endif /* WRENCH_DEBUG */
+
+    /* HACK: We can safely overwrite the object slot with our temp values.
+     */
+    wrenSetSlotNewList(vm, 0);
+    wrenObjectListMethods(vm, 1, 0, 1);
+}
+
+/* TODO: Push this into `wrench.h`.
+ */
+//#include <wren/src/vm/wren_common.h>
+//#include <wren/src/vm/wren_compiler.h>
+//#include <wren/src/vm/wren_core.h>
+//#include <wren/src/vm/wren_debug.h>
+//#include <wren/src/vm/wren_math.h>
+//#include <wren/src/vm/wren_primitive.h>
+#include <wren/src/vm/wren_utils.h>
+#include <wren/src/vm/wren_value.h>
+#include <wren/src/vm/wren_vm.h>
+
+static void vm_WrenVM_getModuleVariable(WrenVM* vm)
+{
+    #if WRENCH_DEBUG
+    {
+        vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+        WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+        wrench_assert(self->vm == vm, "TODO");
+    }
+    #endif /* WRENCH_DEBUG */
+
+    const char* moduleName = wrenGetSlotString(vm, 1);
+    const char* variableName = wrenGetSlotString(vm, 2);
+
+    /* Allocate an ObjString to act as the map key. Garbage collection is safe
+     * here, because the module & var strings are kept "live" in slots 1 and 2.
+     */
+    Value moduleNameValue = wrenNewStringLength(vm, moduleName, wrench_strlen(moduleName));
+
+    /* Attempt to fetch the module from the Wren VM's internal module registry.
+     */
+    Value moduleValue = wrenMapGet(vm->modules, moduleNameValue);
+
+    if (IS_UNDEFINED(moduleValue))
+    {
+        wrenSetSlotNull(vm, 0);
+        return;
+    }
+
+    ObjModule* module = AS_MODULE(moduleValue);
+
+    /* Search the module's symbol table for the variable name.
+     */
+    int symbol = wrenSymbolTableFind(&module->variableNames, variableName, wrench_strlen(variableName));
+
+    if (symbol == -1)
+    {
+        wrenSetSlotNull(vm, 0);
+        return;
+    }
+
+    vm->apiStack[0] = module->variables.data[symbol];
+}
+
+static void vm_WrenVM_currentModuleName(WrenVM* vm)
+{
+    vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+    const char* name = wrenCurrentModuleName(self->vm);
+
+    if (name != NULL)
+    {
+        wrenSetSlotString(vm, 0, name);
+    }
+    else
+    {
+        wrenSetSlotNull(vm, 0);
+    }
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -616,6 +717,10 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             // TODO: getMapEntry
 
             WREN_METHOD(vm, WrenVM, false, objectHasMethod, "(object, signature)", "(_,_)");
+            WREN_METHOD(vm, WrenVM, false, objectCountMethods, "(object)", "(_)");
+            WREN_METHOD(vm, WrenVM, false, objectListMethods, "(object)", "(_)");
+            WREN_METHOD(vm, WrenVM, false, getModuleVariable, "(moduleName, variableName)", "(_,_)");
+            WREN_METHOD(vm, WrenVM, false, currentModuleName, "", "");
 
             // TODO: defaultReallocate
             // TODO: defaultResolveModule
