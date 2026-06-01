@@ -15,6 +15,8 @@ By using the extended VM, you get access to:
 - Optional standard library modules for file I/O, directory enumeration, images, metaprogramming, etc.
 - A build system written in Wren that can be used to build Wrench itself.
 
+This repo also features a single-header library implementing a preprocessor suitable for both C and Wren. It can be added to a custom script loader, as it is not yet integrated into Wrench.
+
 # Getting Started (a Wren-first approach)
 
 Linux/MacOS users can type `sh build.sh` to bootstrap, then `./run_wren project build debug builtin-stdlib` to patch in a few additional features and optimizations to the vanilla core Wren VM.

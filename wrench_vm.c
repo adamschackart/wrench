@@ -798,6 +798,8 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             }
         }
         WREN_END_CLASS();
+
+        // TODO: Preprocessor
     }
 
     if (!vmWrenInitEx(vm))
