@@ -162,11 +162,17 @@ WPP_DECL(char, get_directive_prefix, (wrench_preprocessor_p context));
 #ifndef wrench_fclose
 #define wrench_fclose fclose
 #endif
+#ifndef wrench_ferror
+#define wrench_ferror ferror
+#endif
 #ifndef wrench_fopen
 #define wrench_fopen fopen
 #endif
 #ifndef wrench_fprintf
 #define wrench_fprintf fprintf
+#endif
+#ifndef wrench_fread
+#define wrench_fread fread
 #endif
 #ifndef wrench_free
 #define wrench_free(x) free((void*)(x))
@@ -547,6 +553,14 @@ static const char* wrench_preprocessor_read_entire_file(wrench_preprocessor_p co
 
     long size = wrench_ftell(file);
 
+    if (size < 0)
+    {
+        wrench_fclose(file);
+
+        WRENCH_PREPROCESSOR_TODO_PROPER_ERROR_HANDLING();
+        return NULL;
+    }
+
     if (wrench_fseek(file, 0, SEEK_SET) < 0)
     {
         wrench_fclose(file);
@@ -565,18 +579,23 @@ static const char* wrench_preprocessor_read_entire_file(wrench_preprocessor_p co
         return NULL;
     }
 
-    if (fread(buf, 1, size, file) == 0)
+    size_t read_bytes = wrench_fread(buf, 1, size, file);
+
+    if (read_bytes != (size_t)size && wrench_ferror(file))
     {
         wrench_fclose(file);
+        wrench_free(buf);
 
         WRENCH_PREPROCESSOR_TODO_PROPER_ERROR_HANDLING();
         return NULL;
     }
 
-    buf[size] = '\0';
+    buf[read_bytes] = '\0';
 
     if (wrench_fclose(file) != 0)
     {
+        wrench_free(buf);
+
         WRENCH_PREPROCESSOR_TODO_PROPER_ERROR_HANDLING();
         return NULL;
     }
@@ -2123,21 +2142,26 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                 p = dir_start;
             }
 
-        skip_line:
-            while (*p && *p != '\n') { p++; }
-
-            if (*p == '\n')
+            skip_line:
             {
-                p++;
-                context->current_line++;
-
-                if (!wrench_preprocessor_string_builder_append_char(out, '\n'))
+                while (*p && *p != '\n')
                 {
-                    WRENCH_PREPROCESSOR_TODO_PROPER_ERROR_HANDLING();
+                    p++;
                 }
-            }
 
-            continue;
+                if (*p == '\n')
+                {
+                    p++;
+                    context->current_line++;
+
+                    if (!wrench_preprocessor_string_builder_append_char(out, '\n'))
+                    {
+                        WRENCH_PREPROCESSOR_TODO_PROPER_ERROR_HANDLING();
+                    }
+                }
+
+                continue;
+            }
         }
 
         if (!is_active)
