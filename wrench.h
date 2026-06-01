@@ -605,6 +605,10 @@ WRENCH_DECL(void, ObjectListMethods, (WrenVM* vm, int objSlot, int listSlot, int
  */
 WRENCH_DECL(const char*, CurrentModuleName, (WrenVM* vm));
 
+/* Get the number of arguments in a method signature.
+ */
+WRENCH_DECL(int, SignatureArity, (const char* signature));
+
 /* WrenConfiguration callbacks.
  */
 WRENCH_DECL(void*, DefaultReallocate, (void* ptr, size_t newSize, void* userData));
@@ -722,7 +726,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #define wrench_fread fread
 #endif
 #ifndef wrench_free
-#define wrench_free free
+#define wrench_free(x) free((void*)(x))
 #endif
 #ifndef wrench_fseek
 #define wrench_fseek fseek
@@ -809,7 +813,7 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #define wrench_stat stat
 #endif
 /*
- * XXX: Since we #undef std(err/out), we must re-implement win32 definitions.
+ * XXX: Since we #undef std(in/err/out), we must re-implement win32 definitions.
  */
 #if !defined(wrench_stderr)
     #if _MSC_VER
@@ -866,13 +870,6 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_strcmp
 #define wrench_strcmp strcmp
 #endif
-#if !defined(wrench_strdup)
-    #if _MSC_VER
-        #define wrench_strdup _strdup
-    #else
-        #define wrench_strdup strdup
-    #endif
-#endif
 #ifndef wrench_strlen
 #define wrench_strlen strlen
 #endif
@@ -911,6 +908,31 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
         #define wrench_vsnprintf stbsp_vsnprintf
     #else
         #define wrench_vsnprintf vsnprintf
+    #endif
+#endif
+
+#if !defined(wrench_strdup)
+    #if 1
+        #if _MSC_VER
+            #define wrench_strdup _strdup
+        #else
+            #define wrench_strdup strdup
+        #endif
+    #else
+        static char* _wrench_strdup(const char* s)
+        {
+            const size_t len = wrench_strlen(s);
+            char* d = (char*)wrench_malloc(len + 1);
+
+            if (d == NULL)
+            {
+                return NULL;
+            }
+
+            return (char*)wrench_memcpy(d, s, len + 1);
+        }
+
+        #define wrench_strdup _wrench_strdup
     #endif
 #endif
 
@@ -4324,6 +4346,45 @@ WRENCH_IMPL(const char*, CurrentModuleName, (WrenVM* vm))
     }
 
     return module->name->value;
+}
+
+WRENCH_IMPL(int, SignatureArity, (const char* signature))
+{
+    wrench_assert(signature != NULL, "");
+
+    int signatureLength = (int)wrench_strlen(signature);
+    if (signatureLength == 0)
+    {
+        return -1;
+    }
+
+    int numParams = 0;
+
+    // Count standard method arguments and setter arguments (e.g., "method(_,_)").
+    if (signature[signatureLength - 1] == ')')
+    {
+        for (int i = signatureLength - 1; i > 0 && signature[i] != '('; i--)
+        {
+            if (signature[i] == '_')
+            {
+                numParams++;
+            }
+        }
+    }
+
+    // Count subscript arguments (e.g., "[_,_]" or "[_]=(_)").
+    if (signature[0] == '[')
+    {
+        for (int i = 0; i < signatureLength && signature[i] != ']'; i++)
+        {
+            if (signature[i] == '_')
+            {
+                numParams++;
+            }
+        }
+    }
+
+    return numParams;
 }
 
 WRENCH_IMPL(void*, DefaultReallocate, (void* old_memory, size_t new_size, void* userdata))

@@ -16,10 +16,10 @@
     /*
      * Override memory allocation.
      */
-    #define calloc wrench_calloc
-    #define free wrench_free
-    #define malloc wrench_malloc
-    #define realloc wrench_realloc
+    #define calloc(num, size) wrench_calloc(num, size)
+    #define free(ptr) wrench_free(ptr)
+    #define malloc(size) wrench_malloc(size)
+    #define realloc(ptr, size) wrench_realloc(ptr, size)
 
     #include <zip/src/zip.h>
 

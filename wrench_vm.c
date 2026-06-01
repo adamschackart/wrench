@@ -437,6 +437,10 @@ static void vm_WrenVM_objectListMethods(WrenVM* vm)
 
 /* TODO: Push this into `wrench.h`.
  */
+#ifndef stderr
+#define stderr wrench_stderr
+#endif
+
 //#include <wren/src/vm/wren_common.h>
 //#include <wren/src/vm/wren_compiler.h>
 //#include <wren/src/vm/wren_core.h>
@@ -446,6 +450,10 @@ static void vm_WrenVM_objectListMethods(WrenVM* vm)
 #include <wren/src/vm/wren_utils.h>
 #include <wren/src/vm/wren_value.h>
 #include <wren/src/vm/wren_vm.h>
+
+#ifdef stderr
+#undef stderr
+#endif
 
 static void vm_WrenVM_getModuleVariable(WrenVM* vm)
 {
@@ -506,6 +514,55 @@ static void vm_WrenVM_currentModuleName(WrenVM* vm)
     {
         wrenSetSlotNull(vm, 0);
     }
+}
+
+/* TODO: Push this into `wrench.h`. Create the list here, append in wrench func.
+ */
+static void vm_WrenVM_callStack_(WrenVM* vm)
+{
+    #if WRENCH_DEBUG
+    {
+        vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+        WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+        wrench_assert(self->vm == vm, "TODO");
+    }
+    #endif /* WRENCH_DEBUG */
+
+    ObjFiber* fiber = vm->fiber;
+    wrenSetSlotNewList(vm, 0);
+
+    wrench_assert(fiber != NULL, "");
+    wrench_assert(fiber->numFrames != 0, "");
+
+    for (int i = fiber->numFrames - 1; i >= 0; i--)
+    {
+        CallFrame* frame = &fiber->frames[i];
+        ObjFn* fn = frame->closure->fn;
+
+        int instruction = (int)(frame->ip - fn->code.data) - 1;
+
+        if (instruction < 0 || instruction >= fn->code.count)
+        {
+            continue;
+        }
+
+        int line = fn->debug->sourceLines.data[instruction];
+
+        const char* moduleName = (fn->module != NULL && fn->module->name != NULL) ? fn->module->name->value : "<unknown module>";
+        const char* fnName = (fn->debug != NULL && fn->debug->name) ? fn->debug->name : "<unknown or foreign function>";
+
+        char buffer[1024];
+        wrench_snprintf(buffer, sizeof(buffer), "%s (file \"%s\" line %i)", fnName, moduleName, line);
+
+        wrenSetSlotString(vm, 1, (const char*)buffer);
+        wrenInsertInList(vm, 0, -1, 1);
+    }
+}
+
+static void vm_WrenVM_signatureArity(WrenVM* vm)
+{
+    wrenSetSlotInt(vm, 0, wrenSignatureArity(wrenGetSlotString(vm, 1)));
 }
 
 /*
@@ -721,6 +778,11 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             WREN_METHOD(vm, WrenVM, false, objectListMethods, "(object)", "(_)");
             WREN_METHOD(vm, WrenVM, false, getModuleVariable, "(moduleName, variableName)", "(_,_)");
             WREN_METHOD(vm, WrenVM, false, currentModuleName, "", "");
+
+            WREN_METHOD(vm, WrenVM, false, callStack_, "(unused)", "(_)");
+            WREN_CODE("callStack { callStack_(null) }");
+
+            WREN_METHOD(vm, WrenVM, true, signatureArity, "(signature)", "(_)");
 
             // TODO: defaultReallocate
             // TODO: defaultResolveModule
