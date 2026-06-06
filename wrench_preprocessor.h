@@ -129,7 +129,7 @@ WPP_DECL(char, get_directive_prefix, (wrench_preprocessor_p context));
 
 #ifdef WRENCH_PREPROCESSOR_IMPLEMENTATION
 /*
- * Enable multiple file inclusions with for ease of use.
+ * Enable multiple file inclusions with `WRENCH_PREPROCESSOR_IMPLEMENTATION` for ease of use.
  */
 #ifndef __WRENCH_PREPROCESSOR_C__
 #define __WRENCH_PREPROCESSOR_C__
@@ -215,6 +215,9 @@ WPP_DECL(char, get_directive_prefix, (wrench_preprocessor_p context));
  */
 #ifndef wrench_stderr
 #define wrench_stderr stderr
+#endif
+#ifndef wrench_strchr
+#define wrench_strchr strchr
 #endif
 #ifndef wrench_strcmp
 #define wrench_strcmp strcmp
@@ -1097,7 +1100,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
         {
             if (!wrench_string_builder_append(context, out, m->name))
             {
-                return false;
+                return false; // XXX TODO FIXME: goto cleanup instead!
             }
 
             *input_ptr = p;
@@ -1115,7 +1118,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
         if (!wrench_preprocessor_string_builder_init(context, &current_arg))
         {
-            return false;
+            return false; // XXX TODO FIXME: goto cleanup instead!
         }
 
         int in_quote = 0;
@@ -1127,14 +1130,16 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
             {
                 if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                 {
-                    return false;
+                    wrench_preprocessor_string_builder_free(&current_arg);
+                    return false; // XXX TODO FIXME: goto cleanup instead!
                 }
 
                 if (*p == '\\' && *(p + 1))
                 {
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *(++p)))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == quote_char)
@@ -1151,7 +1156,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == '(')
@@ -1160,7 +1166,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == ')')
@@ -1171,7 +1178,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                         {
                             if (!wrench_preprocessor_save_arg(context, args, &arg_idx, &current_arg))
                             {
-                                return false;
+                                wrench_preprocessor_string_builder_free(&current_arg);
+                                return false; // XXX TODO FIXME: goto cleanup instead!
                             }
                         }
 
@@ -1183,7 +1191,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == '{')
@@ -1192,7 +1201,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == '}')
@@ -1208,7 +1218,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == '[')
@@ -1217,7 +1228,8 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == ']')
@@ -1233,21 +1245,24 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else if (*p == ',' && paren_depth == 0 && (!m->is_variadic || arg_idx < m->num_params - 1))
                 {
                     if (!wrench_preprocessor_save_arg(context, args, &arg_idx, &current_arg))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
                 else
                 {
                     if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p))
                     {
-                        return false;
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
                 }
             }
@@ -1305,7 +1320,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                 {
                     if (!wrench_preprocessor_string_builder_append_char(context, &expanded, '"'))
                     {
-                        return false;
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
 
                     if (args[i])
@@ -1320,7 +1335,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                                 {
                                     if (!wrench_preprocessor_string_builder_append_char(context, &expanded, ' '))
                                     {
-                                        return false;
+                                        return false; // XXX TODO FIXME: goto cleanup instead!
                                     }
 
                                     last_was_space = 1;
@@ -1335,20 +1350,20 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                             {
                                 if (!wrench_preprocessor_string_builder_append_char(context, &expanded, '\\'))
                                 {
-                                    return false;
+                                    return false; // XXX TODO FIXME: goto cleanup instead!
                                 }
                             }
 
                             if (!wrench_preprocessor_string_builder_append_char(context, &expanded, *cp))
                             {
-                                return false;
+                                return false; // XXX TODO FIXME: goto cleanup instead!
                             }
                         }
                     }
 
                     if (!wrench_preprocessor_string_builder_append_char(context, &expanded, '"'))
                     {
-                        return false;
+                        return false; // XXX TODO FIXME: goto cleanup instead!
                     }
 
                     found = 1;
@@ -1360,12 +1375,12 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
             {
                 if (!wrench_preprocessor_string_builder_append_char(context, &expanded, context->directive_prefix))
                 {
-                    return false;
+                    return false; // XXX TODO FIXME: goto cleanup instead!
                 }
 
                 if (!wrench_preprocessor_string_builder_append_len(context, &expanded, id_start, id_len))
                 {
-                    return false;
+                    return false; // XXX TODO FIXME: goto cleanup instead!
                 }
             }
 
@@ -1417,7 +1432,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                     {
                         if (!wrench_string_builder_append(context, &expanded, args[i]))
                         {
-                            return false;
+                            return false; // XXX TODO FIXME: goto cleanup instead!
                         }
                     }
 
@@ -1430,7 +1445,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
             {
                 if (!wrench_preprocessor_string_builder_append_len(context, &expanded, id_start, id_len))
                 {
-                    return false;
+                    return false; // XXX TODO FIXME: goto cleanup instead!
                 }
             }
         }
@@ -1438,7 +1453,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
         {
             if (!wrench_preprocessor_string_builder_append_char(context, &expanded, *b++))
             {
-                return false;
+                return false; // XXX TODO FIXME: goto cleanup instead!
             }
         }
     }
@@ -1449,7 +1464,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
         if (!wrench_preprocessor_internal(context, expanded.data, out, &new_hs))
         {
-            return false;
+            return false; // XXX TODO FIXME: goto cleanup instead!
         }
     }
 
@@ -1525,6 +1540,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
 
                 if (!wrench_preprocessor_string_builder_append_char(context, &out, is_def ? '1' : '0'))
                 {
+                    wrench_preprocessor_string_builder_free(&out);
                     return NULL;
                 }
             }
@@ -1532,6 +1548,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
             {
                 if (!wrench_preprocessor_string_builder_append_len(context, &out, id_start, id_len))
                 {
+                    wrench_preprocessor_string_builder_free(&out);
                     return NULL;
                 }
             }
@@ -1542,6 +1559,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
 
             if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
             {
+                wrench_preprocessor_string_builder_free(&out);
                 return NULL;
             }
 
@@ -1551,12 +1569,14 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
                 {
                     if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
                     {
+                        wrench_preprocessor_string_builder_free(&out);
                         return NULL;
                     }
                 }
 
                 if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
                 {
+                    wrench_preprocessor_string_builder_free(&out);
                     return NULL;
                 }
             }
@@ -1565,6 +1585,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
             {
                 if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
                 {
+                    wrench_preprocessor_string_builder_free(&out);
                     return NULL;
                 }
             }
@@ -1573,6 +1594,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
         {
             if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
             {
+                wrench_preprocessor_string_builder_free(&out);
                 return NULL;
             }
         }
@@ -1604,6 +1626,211 @@ static char* wrench_preprocessor_get_dir_name(wrench_preprocessor_p context, con
     }
 
     return s;
+}
+
+static char* wrench_preprocessor_strip_comments_and_splice(wrench_preprocessor_t* context, const char* input)
+{
+    size_t len = wrench_strlen(input);
+    char* spliced = (char*)wrench_malloc(len + 1);
+
+    if (spliced == NULL)
+    {
+        wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: out of memory - alloc failed", context->current_file, context->current_line);
+        return NULL;
+    }
+
+    const char* r = input;
+    char* w = spliced;
+    int pending_newlines = 0;
+
+    // Phases 1 & 2: Normalize line endings and resolve line splicing.
+    while (*r)
+    {
+        if (*r == '\r')
+        {
+            r++;
+            continue;
+        }
+
+        if (*r == '\\')
+        {
+            const char* temp = r + 1;
+
+            /* Tolerate trailing spaces or \r before the \n.
+             */
+            while (*temp == ' ' || *temp == '\t' || *temp == '\r')
+            {
+                temp++;
+            }
+
+            if (*temp == '\n')
+            {
+                if (context->keep_spliced_lines)
+                {
+                    /* Inject internal marker.
+                     */
+                    *w++ = '\x01';
+                }
+
+                /* Record the deleted newline for error messages etc.
+                 */
+                pending_newlines++;
+                r = temp + 1;
+
+                /* Line spliced; drop the backslash and newline.
+                 */
+                continue;
+            }
+        }
+
+        if (*r == '\n')
+        {
+            *w++ = *r++;
+
+            /* Append the accumulated newlines to the end of the logical line.
+             */
+            while (pending_newlines > 0)
+            {
+                *w++ = '\n';
+                pending_newlines--;
+            }
+
+            continue;
+        }
+
+        *w++ = *r++;
+    }
+
+    /* Append any remaining newlines if the file doesn't end with one.
+     */
+    while (pending_newlines > 0)
+    {
+        *w++ = '\n';
+        pending_newlines--;
+    }
+
+    *w = '\0';
+
+    /* Phase 3: Strip comments.
+     */
+    char* out = (char*)wrench_malloc(wrench_strlen(spliced) + 1);
+
+    if (out == NULL)
+    {
+        wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: out of memory - alloc failed", context->current_file, context->current_line);
+
+        wrench_free(spliced);
+        return NULL;
+    }
+
+    r = spliced;
+    w = out;
+
+    while (*r)
+    {
+        /* NOTE: This is designed to support nested block comments for Wren support.
+         */
+        if (*r == '/')
+        {
+            if (*(r + 1) == '*')
+            {
+                int depth = 1;
+
+                r += 2;
+                *w++ = ' ';
+
+                while (*r)
+                {
+                    if (*r == '/' && *(r + 1) == '*')
+                    {
+                        depth++;
+                        r += 2;
+                    }
+                    else if (*r == '*' && *(r + 1) == '/')
+                    {
+                        depth--;
+                        r += 2;
+
+                        if (depth == 0)
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        /* Preserve newlines to keep __LINE__ synchronization intact.
+                         */
+                        if (*r == '\n')
+                        {
+                            *w++ = '\n';
+                        }
+
+                        r++;
+                    }
+                }
+            }
+            else if (*(r + 1) == '/')
+            {
+                r += 2;
+                *w++ = ' ';
+
+                if (0)
+                {
+                    while (*r && *r != '\n')
+                    {
+                        r++;
+                    }
+                }
+                else
+                {
+                    // Leverage optimized stdlib routines.
+                    char *next = wrench_strchr(r, '\n');
+
+                    if (next != NULL)
+                    {
+                        r = next;
+                    }
+                    else
+                    {
+                        r += wrench_strlen(r);
+                    }
+                }
+            }
+            else
+            {
+                *w++ = *r++;
+            }
+        }
+        else if (*r == '"' || *r == '\'')
+        {
+            char q = *r;
+            *w++ = *r++;
+
+            while (*r && *r != q && *r != '\n')
+            {
+                if (*r == '\\' && *(r + 1))
+                {
+                    *w++ = *r++;
+                }
+
+                *w++ = *r++;
+            }
+
+            if (*r == q)
+            {
+                *w++ = *r++;
+            }
+        }
+        else
+        {
+            *w++ = *r++;
+        }
+    }
+
+    *w = '\0';
+
+    wrench_free(spliced);
+    return out;
 }
 
 static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const char* input, wrench_preprocessor_string_builder_t* out, wrench_preprocessor_hide_set_t* hs)
@@ -1719,11 +1946,15 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                     if (!wrench_preprocessor_string_builder_init(context, &exp_str))
                     {
+                        wrench_free(def_replaced);
                         return false;
                     }
 
                     if (context->if_depth >= WRENCH_ARRAY_COUNT(context->if_stack))
                     {
+                        wrench_preprocessor_string_builder_free(&exp_str);
+                        wrench_free(def_replaced);
+
                         wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: maximum #if nesting depth exceeded", context->current_file, context->current_line);
                         return false;
                     }
@@ -1731,7 +1962,14 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                     int old_depth = context->if_depth;
                     context->if_stack[context->if_depth++] = 0;
 
-                    wrench_preprocessor_internal(context, def_replaced, &exp_str, hs);
+                    if (!wrench_preprocessor_internal(context, def_replaced, &exp_str, hs))
+                    {
+                        wrench_preprocessor_string_builder_free(&exp_str);
+                        wrench_free(def_replaced);
+
+                        return false;
+                    }
+
                     context->if_depth = old_depth;
 
                     if (context->error_string[0] == '\0')
@@ -1792,11 +2030,15 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                         if (!wrench_preprocessor_string_builder_init(context, &exp_str))
                         {
+                            wrench_free(def_replaced);
                             return false;
                         }
 
                         if (context->if_depth >= WRENCH_ARRAY_COUNT(context->if_stack))
                         {
+                            wrench_preprocessor_string_builder_free(&exp_str);
+                            wrench_free(def_replaced);
+
                             wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: maximum #if nesting depth exceeded", context->current_file, context->current_line);
                             return false;
                         }
@@ -1804,7 +2046,13 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                         int old_depth = context->if_depth;
                         context->if_stack[context->if_depth++] = 0;
 
-                        wrench_preprocessor_internal(context, def_replaced, &exp_str, hs);
+                        if (!wrench_preprocessor_internal(context, def_replaced, &exp_str, hs))
+                        {
+                            wrench_preprocessor_string_builder_free(&exp_str);
+                            wrench_free(def_replaced);
+
+                            return false;
+                        }
 
                         context->if_depth = old_depth;
                         long val = 0;
@@ -1956,7 +2204,6 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                 }
 
                 wrench_free(mac_name);
-
                 goto skip_line;
             }
             else if (dir_len == 5 && wrench_strncmp(dir_start, "error", 5) == 0)
@@ -1972,8 +2219,77 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                 wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: %.*s", context->current_file, context->current_line, (int)(p - msg_start), msg_start);
                 return false;
             }
+            else if (dir_len == 7 && wrench_strncmp(dir_start, "warning", 7) == 0)
+            {
+                wrench_preprocessor_skip_whitespace(&p);
+                const char* msg_start = p;
+
+                while (*p && *p != '\n')
+                {
+                    p++;
+                }
+
+                wrench_fprintf(wrench_stderr, "preprocessor warning at %s:%d: %.*s\n", context->current_file, context->current_line, (int)(p - msg_start), msg_start);
+                goto skip_line;
+            }
             else if (dir_len == 6 && wrench_strncmp(dir_start, "pragma", 6) == 0)
             {
+                wrench_preprocessor_skip_whitespace(&p);
+
+                if (wrench_strncmp(p, "message", 7) == 0 && !wrench_preprocessor_is_ident_part(p[7]))
+                {
+                    p += 7;
+
+                    wrench_preprocessor_skip_whitespace(&p);
+                    const char* msg_start = p;
+
+                    while (*p && *p != '\n')
+                    {
+                        p++;
+                    }
+
+                    const char* msg_end = p;
+
+                    /* Strip surrounding parentheses if present.
+                     */
+                    if (msg_start < msg_end && *msg_start == '(')
+                    {
+                        msg_start++;
+
+                        if (msg_end > msg_start && *(msg_end - 1) == ')')
+                        {
+                            msg_end--;
+                        }
+                    }
+
+                    /* Trim trailing/leading whitespace inside the parens.
+                     */
+                    wrench_preprocessor_skip_whitespace(&msg_start);
+
+                    while (msg_end > msg_start && (*(msg_end - 1) == ' ' || *(msg_end - 1) == '\t'))
+                    {
+                        msg_end--;
+                    }
+
+                    /* Strip quotes if present.
+                     */
+                    if (msg_start < msg_end && *msg_start == '"')
+                    {
+                        msg_start++;
+
+                        if (msg_end > msg_start && *(msg_end - 1) == '"')
+                        {
+                            msg_end--;
+                        }
+                    }
+
+                    wrench_fprintf(wrench_stderr, "preprocessor message at %s:%d: %.*s\n", context->current_file, context->current_line, (int)(msg_end - msg_start), msg_start);
+                }
+                else
+                {
+                    // TODO: Warn about invalid #pragmas.
+                }
+
                 p = line_start;
             }
             else if (dir_len == 7 && wrench_strncmp(dir_start, "include", 7) == 0)
@@ -2004,7 +2320,12 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                         return false;
                     }
 
-                    wrench_preprocessor_internal(context, raw_expr, &exp_str, hs);
+                    if (!wrench_preprocessor_internal(context, raw_expr, &exp_str, hs))
+                    {
+                        wrench_preprocessor_string_builder_free(&exp_str);
+                        return false;
+                    }
+
                     wrench_free(raw_expr);
 
                     expanded_include = exp_str.data;
@@ -2029,6 +2350,8 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                     if (inc_file == NULL)
                     {
+                        // TODO: cleanup
+
                         wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: out of memory - string copy failed", context->current_file, context->current_line);
                         return false;
                     }
@@ -2041,29 +2364,29 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                         if (current_dir == NULL)
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
 
                         wrench_preprocessor_string_builder_t path_str;
 
                         if (!wrench_preprocessor_string_builder_init(context, &path_str))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
 
                         if (!wrench_string_builder_append(context, &path_str, current_dir))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
 
                         if (!wrench_string_builder_append(context, &path_str, "/"))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
 
                         if (!wrench_string_builder_append(context, &path_str, inc_file))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
 
                         content = wrench_preprocessor_read_entire_file(context, path_str.data);
@@ -2085,22 +2408,22 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                             if (!wrench_preprocessor_string_builder_init(context, &path_str))
                             {
-                                return false;
+                                return false; // TODO: cleanup
                             }
 
                             if (!wrench_string_builder_append(context, &path_str, d->path))
                             {
-                                return false;
+                                return false; // TODO: cleanup
                             }
 
                             if (!wrench_string_builder_append(context, &path_str, "/"))
                             {
-                                return false;
+                                return false; // TODO: cleanup
                             }
 
                             if (!wrench_string_builder_append(context, &path_str, inc_file))
                             {
-                                return false;
+                                return false; // TODO: cleanup
                             }
 
                             content = wrench_preprocessor_read_entire_file(context, path_str.data);
@@ -2123,7 +2446,19 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                         wrench_snprintf(context->current_file, sizeof(context->current_file), "%s", inc_file);
                         context->current_line = 1;
 
-                        wrench_preprocessor_internal(context, content, out, hs);
+                        char* cleaned_content = wrench_preprocessor_strip_comments_and_splice(context, content);
+
+                        if (cleaned_content == NULL)
+                        {
+                            return false; // TODO: cleanup
+                        }
+
+                        if (!wrench_preprocessor_internal(context, cleaned_content, out, hs))
+                        {
+                            return false; // TODO: cleanup
+                        }
+
+                        wrench_free(cleaned_content);
 
                         wrench_snprintf(context->current_file, sizeof(context->current_file), "%s", prev_file);
                         context->current_line = prev_line;
@@ -2132,6 +2467,8 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                     }
                     else
                     {
+                        // TODO: cleanup
+
                         wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: could not find include '%s'", context->current_file, context->current_line, inc_file);
                         return false;
                     }
@@ -2146,15 +2483,39 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                 if (context->error_string[0] != '\0')
                 {
-                    return false;
+                    return false; // TODO: cleanup
                 }
 
                 goto skip_line;
             }
             else
+        #if 0
+            // Discard lines with invalid tokens.
             {
                 p = dir_start;
             }
+        #elif 1
+            // Preserve lines with invalid tokens.
+            {
+                p = line_start;
+
+                while (*p && *p != '\n')
+                {
+                    if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
+                    {
+                        return false; // TODO: cleanup
+                    }
+                }
+            }
+        #else
+            // Error on invalid tokens.
+            {
+                // TODO: cleanup
+
+                wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: invalid directive '#%.*s'", context->current_file, context->current_line, (int)dir_len, dir_start);
+                return false;
+            }
+        #endif
 
             skip_line:
             {
@@ -2170,7 +2531,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                     if (!wrench_preprocessor_string_builder_append_char(context, out, '\n'))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
 
@@ -2192,7 +2553,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                 if (!wrench_preprocessor_string_builder_append_char(context, out, '\n'))
                 {
-                    return false;
+                    return false; // TODO: cleanup
                 }
             }
 
@@ -2221,38 +2582,38 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                     if (!wrench_string_builder_append(context, out, buf))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
                 else if (id_len == 8 && wrench_strncmp(id_start, "__FILE__", 8) == 0)
                 {
                     if (!wrench_preprocessor_string_builder_append_char(context, out, '"'))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
 
                     if (!wrench_string_builder_append(context, out, context->current_file))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
 
                     if (!wrench_preprocessor_string_builder_append_char(context, out, '"'))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
                 else if (id_len == 8 && wrench_strncmp(id_start, "__DATE__", 8) == 0)
                 {
                     if (!wrench_string_builder_append(context, out, context->date_str))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
                 else if (id_len == 8 && wrench_strncmp(id_start, "__TIME__", 8) == 0)
                 {
                     if (!wrench_string_builder_append(context, out, context->time_str))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
                 else if (id_len == 11 && wrench_strncmp(id_start, "__COUNTER__", 11) == 0)
@@ -2262,7 +2623,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                     if (!wrench_string_builder_append(context, out, buf))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
                 else
@@ -2273,19 +2634,19 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                     {
                         if (!wrench_preprocessor_expand_macro(context, m, &p, out, hs))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
 
                         if (context->error_string[0] != '\0')
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
                     }
                     else
                     {
                         if (!wrench_preprocessor_string_builder_append_len(context, out, id_start, id_len))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
                     }
                 }
@@ -2296,7 +2657,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                 if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
                 {
-                    return false;
+                    return false; // TODO: cleanup
                 }
 
                 while (*p && *p != quote && *p != '\n')
@@ -2305,13 +2666,13 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                     {
                         if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
                         {
-                            return false;
+                            return false; // TODO: cleanup
                         }
                     }
 
                     if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
 
@@ -2319,7 +2680,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                 {
                     if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
                     {
-                        return false;
+                        return false; // TODO: cleanup
                     }
                 }
             }
@@ -2327,7 +2688,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             {
                 if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
                 {
-                    return false;
+                    return false; // TODO: cleanup
                 }
             }
         }
@@ -2336,7 +2697,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
         {
             if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
             {
-                return false;
+                return false; // TODO: cleanup
             }
 
             context->current_line++;
@@ -2344,177 +2705,6 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
     }
 
     return true;
-}
-
-static char* wrench_preprocessor_strip_comments_and_splice(wrench_preprocessor_t* context, const char* input)
-{
-    size_t len = wrench_strlen(input);
-    char* spliced = (char*)wrench_malloc(len + 1);
-
-    if (spliced == NULL)
-    {
-        wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: out of memory - alloc failed", context->current_file, context->current_line);
-        return NULL;
-    }
-
-    const char* r = input;
-    char* w = spliced;
-    int pending_newlines = 0;
-
-    // Phases 1 & 2: Normalize line endings and resolve line splicing.
-    while (*r)
-    {
-        if (*r == '\r')
-        {
-            r++;
-            continue;
-        }
-
-        if (*r == '\\')
-        {
-            const char* temp = r + 1;
-
-            /* Tolerate trailing spaces or \r before the \n.
-             */
-            while (*temp == ' ' || *temp == '\t' || *temp == '\r')
-            {
-                temp++;
-            }
-
-            if (*temp == '\n')
-            {
-                if (context->keep_spliced_lines)
-                {
-                    /* Inject internal marker.
-                     */
-                    *w++ = '\x01';
-                }
-
-                /* Record the deleted newline for error messages etc.
-                 */
-                pending_newlines++;
-                r = temp + 1;
-
-                /* Line spliced; drop the backslash and newline.
-                 */
-                continue;
-            }
-        }
-
-        if (*r == '\n')
-        {
-            *w++ = *r++;
-
-            /* Append the accumulated newlines to the end of the logical line.
-             */
-            while (pending_newlines > 0)
-            {
-                *w++ = '\n';
-                pending_newlines--;
-            }
-
-            continue;
-        }
-
-        /* Append any remaining newlines if the file doesn't end with one.
-         */
-        while (pending_newlines > 0)
-        {
-            *w++ = '\n';
-            pending_newlines--;
-        }
-
-        *w++ = *r++;
-    }
-
-    *w = '\0';
-
-    /* Phase 3: Strip comments.
-     */
-    char* out = (char*)wrench_malloc(wrench_strlen(spliced) + 1);
-
-    if (out == NULL)
-    {
-        wrench_preprocessor_set_error_string_ex(context, "preprocessor error at %s:%d: out of memory - alloc failed", context->current_file, context->current_line);
-
-        wrench_free(spliced);
-        return NULL;
-    }
-
-    r = spliced;
-    w = out;
-
-    while (*r)
-    {
-        if (*r == '/' && *(r + 1) == '*')
-        {
-            r += 2;
-            *w++ = ' ';
-
-            while (*r)
-            {
-                if (*r == '*' && *(r + 1) == '/')
-                {
-                    r += 2;
-                    break;
-                }
-
-                /* Preserve newlines to keep __LINE__ synchronization intact.
-                 */
-                if (*r == '\n')
-                {
-                    *w++ = '\n';
-                }
-
-                r++;
-            }
-
-            continue;
-        }
-
-        if (*r == '/' && *(r + 1) == '/')
-        {
-            r += 2;
-            *w++ = ' ';
-
-            while (*r && *r != '\n')
-            {
-                r++;
-            }
-
-            continue;
-        }
-
-        if (*r == '"' || *r == '\'')
-        {
-            char q = *r;
-            *w++ = *r++;
-
-            while (*r && *r != q && *r != '\n')
-            {
-                if (*r == '\\' && *(r + 1))
-                {
-                    *w++ = *r++;
-                }
-
-                *w++ = *r++;
-            }
-
-            if (*r == q)
-            {
-                *w++ = *r++;
-            }
-
-            continue;
-        }
-
-        *w++ = *r++;
-    }
-
-    *w = '\0';
-
-    wrench_free(spliced);
-    return out;
 }
 
 /* ===== [ public API ] ===================================================== */
@@ -2670,6 +2860,7 @@ WPP_IMPL(bool, define, (wrench_preprocessor_p context, const char* signature, co
 
     if (!wrench_preprocessor_undef(context, macro_name))
     {
+        wrench_free(macro_name);
         return false;
     }
 
@@ -2678,7 +2869,10 @@ WPP_IMPL(bool, define, (wrench_preprocessor_p context, const char* signature, co
 
     if (m == NULL)
     {
+        wrench_free(macro_name);
+
         wrench_preprocessor_set_error_string_ex(context, "out of memory - alloc failed in #define %s=%s", signature, value);
+        return false;
     }
 
     m->name = macro_name;
@@ -2711,6 +2905,11 @@ WPP_IMPL(bool, define, (wrench_preprocessor_p context, const char* signature, co
 
                 if (m->params[m->num_params] == NULL)
                 {
+                    /* XXX TODO FIXME: Free previously duplicated params.
+                     */
+                    wrench_free(macro_name);
+                    wrench_free(m);
+
                     wrench_preprocessor_set_error_string_ex(context, "out of memory - string copy failed in #define %s=%s", signature, value);
                     return false;
                 }
