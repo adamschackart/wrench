@@ -1,8 +1,6 @@
 /* -----------------------------------------------------------------------------
 --- Copyright (c) 2012-2026 Adam Schackart / "AJ Hackman", all rights reserved.
 --- Distributed under the BSD license v2 (opensource.org/licenses/BSD-3-Clause)
---------------------------------------------------------------------------------
---- TODO: Disable comment stripping, single-line + block comment string setter.
 ----------------------------------------------------------------------------- */
 #ifndef __WRENCH_PREPROCESSOR_H__
 #define __WRENCH_PREPROCESSOR_H__
@@ -12,6 +10,10 @@
      * For bool.
      */
     #include <stdbool.h>
+    /*
+     * For FILE.
+     */
+    #include <stdio.h>
 #endif
 
 /*
@@ -116,8 +118,25 @@ WPP_DECL(const char*, get_error_string, (wrench_preprocessor_p context));
 WPP_DECL(void, set_directive_prefix, (wrench_preprocessor_p context, char prefix));
 WPP_DECL(char, get_directive_prefix, (wrench_preprocessor_p context));
 
+/* Enables or disables the preservation of comments in the output.
+ */
+WPP_DECL(void, set_keep_comments, (wrench_preprocessor_p context, bool enabled));
+WPP_DECL(bool, get_keep_comments, (wrench_preprocessor_p context));
+
+/* Set custom comment strings. Defaults are C-style // etc.
+ */
+WPP_DECL(void, set_comment_strings, (wrench_preprocessor_p context, const char* single_start, const char* block_start, const char* block_end));
+
 // TODO: set_base_path
 // TODO: get_base_path
+
+/* Print preprocessor state for debugging.
+ */
+WPP_DECL(void, dump_state, (wrench_preprocessor_p context, FILE* stream));
+
+/* In-place whitespace stripping. Strips comments if `keep_comments` is false.
+ */
+WPP_DECL(void, minify, (wrench_preprocessor_p context, char* input));
 
 #endif /* __WRENCH_PREPROCESSOR_H__ */
 
@@ -230,6 +249,9 @@ WPP_DECL(char, get_directive_prefix, (wrench_preprocessor_p context));
 #endif
 #ifndef wrench_strncmp
 #define wrench_strncmp strncmp
+#endif
+#ifndef wrench_strncpy
+#define wrench_strncpy strncpy
 #endif
 #ifndef wrench_strrchr
 #define wrench_strrchr strrchr
@@ -360,8 +382,18 @@ typedef struct wrench_preprocessor_t
     int if_stack[256];
     int if_depth;
     char directive_prefix;
-    /*
-     * TODO: We take the date and time on preprocessor creation, which ensures
+
+    /* Comment settings.
+     */
+    bool keep_comments;
+    char single_comment_start[8];
+    size_t single_comment_start_len;
+    char block_comment_start[8];
+    size_t block_comment_start_len;
+    char block_comment_end[8];
+    size_t block_comment_end_len;
+
+    /* TODO: We take the date and time on preprocessor creation, which ensures
      * that all invocations of __DATE__ and __TIME__ will be the same across
      * the entire preprocessing run. However, this breaks if the preprocessor
      * is reused at a later time. Investigate the requirements of the standard?
@@ -606,13 +638,71 @@ static int wrench_preprocessor_is_ident_part(char c)
 
 /* TODO: Take const char*, return const char* after the whitespace.
  */
-static void wrench_preprocessor_skip_whitespace(const char** p)
+static void wrench_preprocessor_skip_whitespace(wrench_preprocessor_t* context, const char** p)
 {
-    /* HACK: \x01 is a special character we use to preserve spliced lines.
-     */
-    while (**p != '\0' && (**p == ' ' || **p == '\t' || **p == '\x01'))
+    wrench_assert(context->block_comment_start_len > 0, "");
+    wrench_assert(context->block_comment_end_len > 0, "");
+    wrench_assert(context->single_comment_start_len > 0, "");
+
+    while (**p)
     {
-        (*p)++;
+        /* HACK: \x01 is a special character we use to preserve spliced lines.
+         */
+        if (**p == ' ' || **p == '\t' || **p == '\x01')
+        {
+            (*p)++;
+        }
+        else if (context->keep_comments &&
+                /*context->block_comment_start_len > 0 &&*/
+                **p == context->block_comment_start[0] &&
+                wrench_strncmp(*p, context->block_comment_start, context->block_comment_start_len) == 0)
+        {
+            int depth = 1;
+            *p += context->block_comment_start_len;
+
+            while (**p)
+            {
+                if (/*context->block_comment_start_len > 0 &&*/
+                    **p == context->block_comment_start[0] &&
+                    wrench_strncmp(*p, context->block_comment_start, context->block_comment_start_len) == 0)
+                {
+                    depth++;
+                    *p += context->block_comment_start_len;
+                }
+                else if (/*context->block_comment_end_len > 0 &&*/
+                        **p == context->block_comment_end[0] &&
+                        wrench_strncmp(*p, context->block_comment_end, context->block_comment_end_len) == 0)
+                {
+                    depth--;
+                    *p += context->block_comment_end_len;
+
+                    if (depth == 0)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    (*p)++;
+                }
+            }
+        }
+        else if (context->keep_comments &&
+                /*context->single_comment_start_len > 0 &&*/
+                **p == context->single_comment_start[0] &&
+                wrench_strncmp(*p, context->single_comment_start, context->single_comment_start_len) == 0)
+        {
+            *p += context->single_comment_start_len;
+
+            while (**p && **p != '\n')
+            {
+                (*p)++;
+            }
+        }
+        else
+        {
+            break;
+        }
     }
 }
 
@@ -633,14 +723,14 @@ static long wrench_preprocessor_eval_expression_logical_or(wrench_preprocessor_t
 
 static long wrench_preprocessor_eval_primary(wrench_preprocessor_t* context, const char** p, int eval)
 {
-    wrench_preprocessor_skip_whitespace(p);
+    wrench_preprocessor_skip_whitespace(context, p);
 
     if (**p == '(')
     {
         (*p)++;
 
         long val = wrench_preprocessor_eval_expression_logical_or(context, p, eval);
-        wrench_preprocessor_skip_whitespace(p);
+        wrench_preprocessor_skip_whitespace(context, p);
 
         if (**p == ')')
         {
@@ -731,7 +821,7 @@ static long wrench_preprocessor_eval_primary(wrench_preprocessor_t* context, con
 
 static long wrench_preprocessor_eval_unary(wrench_preprocessor_t* context, const char** p, int eval)
 {
-    wrench_preprocessor_skip_whitespace(p);
+    wrench_preprocessor_skip_whitespace(context, p);
 
     if (**p == '+') { (*p)++; return +wrench_preprocessor_eval_unary(context, p, eval); }
     if (**p == '-') { (*p)++; return -wrench_preprocessor_eval_unary(context, p, eval); }
@@ -747,7 +837,7 @@ static long wrench_preprocessor_eval_mul(wrench_preprocessor_t* context, const c
 
     while (1)
     {
-        wrench_preprocessor_skip_whitespace(p);
+        wrench_preprocessor_skip_whitespace(context, p);
 
         if (**p == '*')
         {
@@ -810,7 +900,7 @@ static long wrench_preprocessor_eval_add(wrench_preprocessor_t* context, const c
 
     while (1)
     {
-        wrench_preprocessor_skip_whitespace(p);
+        wrench_preprocessor_skip_whitespace(context, p);
 
         if (**p == '+')
         {
@@ -837,7 +927,7 @@ static long wrench_preprocessor_eval_shift(wrench_preprocessor_t* context, const
 
     while (context->error_string[0] == '\0')
     {
-        wrench_preprocessor_skip_whitespace(p);
+        wrench_preprocessor_skip_whitespace(context, p);
 
         if (wrench_strncmp(*p, "<<", 2) == 0)
         {
@@ -890,7 +980,7 @@ static long wrench_preprocessor_eval_relational(wrench_preprocessor_t* context, 
 
     while (1)
     {
-        wrench_preprocessor_skip_whitespace(p);
+        wrench_preprocessor_skip_whitespace(context, p);
 
         if (wrench_strncmp(*p, "<=", 2) == 0)
         {
@@ -927,7 +1017,7 @@ static long wrench_preprocessor_eval_equality(wrench_preprocessor_t* context, co
 
     while (1)
     {
-        wrench_preprocessor_skip_whitespace(p);
+        wrench_preprocessor_skip_whitespace(context, p);
 
         if (wrench_strncmp(*p, "==", 2) == 0)
         {
@@ -1077,6 +1167,10 @@ static bool wrench_preprocessor_save_arg(wrench_preprocessor_t* context, char** 
 
 static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wrench_preprocessor_macro_t* m, const char** input_ptr, wrench_preprocessor_string_builder_t* out, wrench_preprocessor_hide_set_t* hs)
 {
+    wrench_assert(context->block_comment_start_len > 0, "");
+    wrench_assert(context->block_comment_end_len > 0, "");
+    wrench_assert(context->single_comment_start_len > 0, "");
+
     if (context->error_string[0] != '\0')
     {
         return false;
@@ -1094,7 +1188,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
     if (m->is_function)
     {
-        wrench_preprocessor_skip_whitespace(&p);
+        wrench_preprocessor_skip_whitespace(context, &p);
 
         if (*p != '(')
         {
@@ -1159,6 +1253,91 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                         wrench_preprocessor_string_builder_free(&current_arg);
                         return false; // XXX TODO FIXME: goto cleanup instead!
                     }
+                }
+                else if (context->keep_comments &&
+                        /*context->block_comment_start_len > 0 &&*/
+                        *p == context->block_comment_start[0] &&
+                        wrench_strncmp(p, context->block_comment_start, context->block_comment_start_len) == 0)
+                {
+                    int depth = 1;
+
+                    if (!wrench_preprocessor_string_builder_append_len(context, &current_arg, p, context->block_comment_start_len))
+                    {
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
+                    }
+
+                    p += context->block_comment_start_len;
+
+                    while (*p)
+                    {
+                        if (/*context->block_comment_start_len > 0 &&*/
+                            *p == context->block_comment_start[0] &&
+                            wrench_strncmp(p, context->block_comment_start, context->block_comment_start_len) == 0)
+                        {
+                            depth++;
+
+                            if (!wrench_preprocessor_string_builder_append_len(context, &current_arg, p, context->block_comment_start_len))
+                            {
+                                wrench_preprocessor_string_builder_free(&current_arg);
+                                return false; // XXX TODO FIXME: goto cleanup instead!
+                            }
+
+                            p += context->block_comment_start_len;
+                        }
+                        else if (/*context->block_comment_end_len > 0 &&*/
+                                *p == context->block_comment_end[0] &&
+                                wrench_strncmp(p, context->block_comment_end, context->block_comment_end_len) == 0)
+                        {
+                            depth--;
+
+                            if (!wrench_preprocessor_string_builder_append_len(context, &current_arg, p, context->block_comment_end_len))
+                            {
+                                wrench_preprocessor_string_builder_free(&current_arg);
+                                return false; // XXX TODO FIXME: goto cleanup instead!
+                            }
+
+                            p += context->block_comment_end_len;
+
+                            if (depth == 0)
+                            {
+                                p--;
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p++))
+                            {
+                                wrench_preprocessor_string_builder_free(&current_arg);
+                                return false; // XXX TODO FIXME: goto cleanup instead!
+                            }
+                        }
+                    }
+                }
+                else if (context->keep_comments &&
+                        /*context->single_comment_start_len > 0 &&*/
+                        *p == context->single_comment_start[0] &&
+                        wrench_strncmp(p, context->single_comment_start, context->single_comment_start_len) == 0)
+                {
+                    if (!wrench_preprocessor_string_builder_append_len(context, &current_arg, p, context->single_comment_start_len))
+                    {
+                        wrench_preprocessor_string_builder_free(&current_arg);
+                        return false; // XXX TODO FIXME: goto cleanup instead!
+                    }
+
+                    p += context->single_comment_start_len;
+
+                    while (*p && *p != '\n')
+                    {
+                        if (!wrench_preprocessor_string_builder_append_char(context, &current_arg, *p++))
+                        {
+                            wrench_preprocessor_string_builder_free(&current_arg);
+                            return false; // XXX TODO FIXME: goto cleanup instead!
+                        }
+                    }
+
+                    p--;
                 }
                 else if (*p == '(')
                 {
@@ -1288,11 +1467,92 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
     while (*b)
     {
+        if (context->keep_comments &&
+            /*context->block_comment_start_len > 0 &&*/
+            *b == context->block_comment_start[0] &&
+            wrench_strncmp(b, context->block_comment_start, context->block_comment_start_len) == 0)
+        {
+            int depth = 1;
+
+            if (!wrench_preprocessor_string_builder_append_len(context, &expanded, b, context->block_comment_start_len))
+            {
+                return false; /* use goto cleanup in your implementation */
+            }
+
+            b += context->block_comment_start_len;
+
+            while (*b)
+            {
+                if (/*context->block_comment_start_len > 0 &&*/
+                    *b == context->block_comment_start[0] &&
+                    wrench_strncmp(b, context->block_comment_start, context->block_comment_start_len) == 0)
+                {
+                    depth++;
+
+                    if (!wrench_preprocessor_string_builder_append_len(context, &expanded, b, context->block_comment_start_len))
+                    {
+                        return false;
+                    }
+
+                    b += context->block_comment_start_len;
+                }
+                else if (/*context->block_comment_end_len > 0 &&*/
+                        *b == context->block_comment_end[0] &&
+                        wrench_strncmp(b, context->block_comment_end, context->block_comment_end_len) == 0)
+                {
+                    depth--;
+
+                    if (!wrench_preprocessor_string_builder_append_len(context, &expanded, b, context->block_comment_end_len))
+                    {
+                        return false;
+                    }
+
+                    b += context->block_comment_end_len;
+
+                    if (depth == 0)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    if (!wrench_preprocessor_string_builder_append_char(context, &expanded, *b++))
+                    {
+                        return false;
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (context->keep_comments &&
+            /*context->single_comment_start_len > 0 &&*/
+            *b == context->single_comment_start[0] &&
+            wrench_strncmp(b, context->single_comment_start, context->single_comment_start_len) == 0)
+        {
+            if (!wrench_preprocessor_string_builder_append_len(context, &expanded, b, context->single_comment_start_len))
+            {
+                return false;
+            }
+
+            b += context->single_comment_start_len;
+
+            while (*b && *b != '\n')
+            {
+                if (!wrench_preprocessor_string_builder_append_char(context, &expanded, *b++))
+                {
+                    return false;
+                }
+            }
+
+            continue;
+        }
+
         if (*b == context->directive_prefix && *(b + 1) != context->directive_prefix)
         {
             b++;
 
-            wrench_preprocessor_skip_whitespace(&b);
+            wrench_preprocessor_skip_whitespace(context, &b);
             const char* id_start = b;
 
             while (wrench_preprocessor_is_ident_part(*b))
@@ -1397,7 +1657,7 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
                 expanded.data[expanded.length] = '\0';
             }
 
-            wrench_preprocessor_skip_whitespace(&b);
+            wrench_preprocessor_skip_whitespace(context, &b);
             continue;
         }
 
@@ -1485,6 +1745,10 @@ static bool wrench_preprocessor_expand_macro(wrench_preprocessor_t* context, wre
 
 static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* context, const char* expr)
 {
+    wrench_assert(context->block_comment_start_len > 0, "");
+    wrench_assert(context->block_comment_end_len > 0, "");
+    wrench_assert(context->single_comment_start_len > 0, "");
+
     wrench_preprocessor_string_builder_t out;
 
     if (!wrench_preprocessor_string_builder_init(context, &out))
@@ -1496,6 +1760,96 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
 
     while (*p)
     {
+        if (context->keep_comments &&
+            /*context->block_comment_start_len > 0 &&*/
+            *p == context->block_comment_start[0] &&
+            wrench_strncmp(p, context->block_comment_start, context->block_comment_start_len) == 0)
+        {
+            int depth = 1;
+
+            if (!wrench_preprocessor_string_builder_append_len(context, &out, p, context->block_comment_start_len))
+            {
+                wrench_preprocessor_string_builder_free(&out);
+                return NULL;
+            }
+
+            p += context->block_comment_start_len;
+
+            while (*p)
+            {
+                if (/*context->block_comment_start_len > 0 &&*/
+                    *p == context->block_comment_start[0] &&
+                    wrench_strncmp(p, context->block_comment_start, context->block_comment_start_len) == 0)
+                {
+                    depth++;
+
+                    if (!wrench_preprocessor_string_builder_append_len(context, &out, p, context->block_comment_start_len))
+                    {
+                        wrench_preprocessor_string_builder_free(&out);
+                        return NULL;
+                    }
+
+                    p += context->block_comment_start_len;
+                }
+                else if (/*context->block_comment_end_len > 0 &&*/
+                        *p == context->block_comment_end[0] &&
+                        wrench_strncmp(p, context->block_comment_end, context->block_comment_end_len) == 0)
+                {
+                    depth--;
+
+                    if (!wrench_preprocessor_string_builder_append_len(context, &out, p, context->block_comment_end_len))
+                    {
+                        wrench_preprocessor_string_builder_free(&out);
+                        return NULL;
+                    }
+
+                    p += context->block_comment_end_len;
+
+                    if (depth == 0)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
+                    {
+                        wrench_preprocessor_string_builder_free(&out);
+                        return NULL;
+                    }
+                }
+            }
+
+            continue;
+        }
+
+        if (context->keep_comments &&
+            /*context->single_comment_start_len > 0 &&*/
+            *p == context->single_comment_start[0] &&
+            wrench_strncmp(p, context->single_comment_start, context->single_comment_start_len) == 0)
+        {
+            size_t ss_len = context->single_comment_start_len;
+
+            if (!wrench_preprocessor_string_builder_append_len(context, &out, p, ss_len))
+            {
+                wrench_preprocessor_string_builder_free(&out);
+                return NULL;
+            }
+
+            p += ss_len;
+
+            while (*p && *p != '\n')
+            {
+                if (!wrench_preprocessor_string_builder_append_char(context, &out, *p++))
+                {
+                    wrench_preprocessor_string_builder_free(&out);
+                    return NULL;
+                }
+            }
+
+            continue;
+        }
+
         if (wrench_preprocessor_is_ident_start(*p))
         {
             const char* id_start = p;
@@ -1510,7 +1864,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
             if (id_len == 7 && wrench_strncmp(id_start, "defined", 7) == 0)
             {
                 const char* temp = p;
-                wrench_preprocessor_skip_whitespace(&temp);
+                wrench_preprocessor_skip_whitespace(context, &temp);
 
                 int has_paren = (*temp == '(');
                 if (has_paren)
@@ -1518,7 +1872,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
                     temp++;
                 }
 
-                wrench_preprocessor_skip_whitespace(&temp);
+                wrench_preprocessor_skip_whitespace(context, &temp);
                 const char* target_start = temp;
 
                 while (wrench_preprocessor_is_ident_part(*temp))
@@ -1529,7 +1883,7 @@ static char* wrench_preprocessor_preprocess_defined(wrench_preprocessor_t* conte
                 size_t target_len = temp - target_start;
 
                 int is_def = wrench_preprocessor_find_macro(context, target_start, target_len) != NULL;
-                wrench_preprocessor_skip_whitespace(&temp);
+                wrench_preprocessor_skip_whitespace(context, &temp);
 
                 if (has_paren && *temp == ')')
                 {
@@ -1630,6 +1984,10 @@ static char* wrench_preprocessor_get_dir_name(wrench_preprocessor_p context, con
 
 static char* wrench_preprocessor_strip_comments_and_splice(wrench_preprocessor_t* context, const char* input)
 {
+    wrench_assert(context->block_comment_start_len > 0, "");
+    wrench_assert(context->block_comment_end_len > 0, "");
+    wrench_assert(context->single_comment_start_len > 0, "");
+
     size_t len = wrench_strlen(input);
     char* spliced = (char*)wrench_malloc(len + 1);
 
@@ -1711,7 +2069,7 @@ static char* wrench_preprocessor_strip_comments_and_splice(wrench_preprocessor_t
 
     *w = '\0';
 
-    /* Phase 3: Strip comments.
+    /* Phase 3: Strip comments. Designed to support Wren nested block comments.
      */
     char* out = (char*)wrench_malloc(wrench_strlen(spliced) + 1);
 
@@ -1728,77 +2086,100 @@ static char* wrench_preprocessor_strip_comments_and_splice(wrench_preprocessor_t
 
     while (*r)
     {
-        /* NOTE: This is designed to support nested block comments for Wren support.
-         */
-        if (*r == '/')
+        if (/*context->block_comment_start_len > 0 &&*/
+            *r == context->block_comment_start[0] &&
+            wrench_strncmp(r, context->block_comment_start, context->block_comment_start_len) == 0)
         {
-            if (*(r + 1) == '*')
+            int depth = 1;
+
+            if (context->keep_comments)
             {
-                int depth = 1;
-
-                r += 2;
-                *w++ = ' ';
-
-                while (*r)
-                {
-                    if (*r == '/' && *(r + 1) == '*')
-                    {
-                        depth++;
-                        r += 2;
-                    }
-                    else if (*r == '*' && *(r + 1) == '/')
-                    {
-                        depth--;
-                        r += 2;
-
-                        if (depth == 0)
-                        {
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        /* Preserve newlines to keep __LINE__ synchronization intact.
-                         */
-                        if (*r == '\n')
-                        {
-                            *w++ = '\n';
-                        }
-
-                        r++;
-                    }
-                }
+                wrench_memcpy(w, r, context->block_comment_start_len);
+                w += context->block_comment_start_len;
             }
-            else if (*(r + 1) == '/')
+            else
             {
-                r += 2;
                 *w++ = ' ';
+            }
 
-                if (0)
+            r += context->block_comment_start_len;
+
+            while (*r)
+            {
+                if (/*context->block_comment_start_len > 0 &&*/
+                    *r == context->block_comment_start[0] &&
+                    wrench_strncmp(r, context->block_comment_start, context->block_comment_start_len) == 0)
                 {
-                    while (*r && *r != '\n')
+                    depth++;
+
+                    if (context->keep_comments)
                     {
-                        r++;
+                        wrench_memcpy(w, r, context->block_comment_start_len);
+                        w += context->block_comment_start_len;
+                    }
+
+                    r += context->block_comment_start_len;
+                }
+                else if (/*context->block_comment_end_len > 0 &&*/
+                        *r == context->block_comment_end[0] &&
+                        wrench_strncmp(r, context->block_comment_end, context->block_comment_end_len) == 0)
+                {
+                    depth--;
+
+                    if (context->keep_comments)
+                    {
+                        wrench_memcpy(w, r, context->block_comment_end_len);
+                        w += context->block_comment_end_len;
+                    }
+
+                    r += context->block_comment_end_len;
+
+                    if (depth == 0)
+                    {
+                        break;
                     }
                 }
                 else
                 {
-                    // Leverage optimized stdlib routines.
-                    char *next = wrench_strchr(r, '\n');
+                    /* Preserve newlines to keep __LINE__ synchronization intact.
+                     */
+                    if (*r == '\n')
+                    {
+                        *w++ = '\n';
+                    }
+                    else if (context->keep_comments)
+                    {
+                        *w++ = *r;
+                    }
 
-                    if (next != NULL)
-                    {
-                        r = next;
-                    }
-                    else
-                    {
-                        r += wrench_strlen(r);
-                    }
+                    r++;
                 }
+            }
+        }
+        else if (/*context->single_comment_start_len > 0 &&*/
+                *r == context->single_comment_start[0] &&
+                wrench_strncmp(r, context->single_comment_start, context->single_comment_start_len) == 0)
+        {
+            if (context->keep_comments)
+            {
+                wrench_memcpy(w, r, context->single_comment_start_len);
+                w += context->single_comment_start_len;
             }
             else
             {
-                *w++ = *r++;
+                *w++ = ' ';
+            }
+
+            r += context->single_comment_start_len;
+
+            while (*r && *r != '\n')
+            {
+                if (context->keep_comments)
+                {
+                    *w++ = *r;
+                }
+
+                r++;
             }
         }
         else if (*r == '"' || *r == '\'')
@@ -1858,11 +2239,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
         {
             p++;
 
-            while (*p == ' ' || *p == '\t')
-            {
-                p++;
-            }
-
+            wrench_preprocessor_skip_whitespace(context, &p);
             const char* dir_start = p;
 
             while (wrench_preprocessor_is_ident_part(*p))
@@ -1874,7 +2251,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
             if (dir_len == 5 && wrench_strncmp(dir_start, "ifdef", 5) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* mac_start = p;
 
                 while (wrench_preprocessor_is_ident_part(*p))
@@ -1895,7 +2272,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             }
             else if (dir_len == 6 && wrench_strncmp(dir_start, "ifndef", 6) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* mac_start = p;
 
                 while (wrench_preprocessor_is_ident_part(*p))
@@ -2112,7 +2489,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
             if (dir_len == 6 && wrench_strncmp(dir_start, "define", 6) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* sig_start = p;
 
                 while (*p && *p != '\n' && !(*p == ' ' || *p == '\t'))
@@ -2143,7 +2520,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                     return false;
                 }
 
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* val_start = p;
 
                 while (*p && *p != '\n')
@@ -2182,7 +2559,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             }
             else if (dir_len == 5 && wrench_strncmp(dir_start, "undef", 5) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* mac_start = p;
 
                 while (wrench_preprocessor_is_ident_part(*p))
@@ -2208,7 +2585,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             }
             else if (dir_len == 5 && wrench_strncmp(dir_start, "error", 5) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* msg_start = p;
 
                 while (*p && *p != '\n')
@@ -2221,7 +2598,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             }
             else if (dir_len == 7 && wrench_strncmp(dir_start, "warning", 7) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
                 const char* msg_start = p;
 
                 while (*p && *p != '\n')
@@ -2234,13 +2611,13 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             }
             else if (dir_len == 6 && wrench_strncmp(dir_start, "pragma", 6) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
 
                 if (wrench_strncmp(p, "message", 7) == 0 && !wrench_preprocessor_is_ident_part(p[7]))
                 {
                     p += 7;
 
-                    wrench_preprocessor_skip_whitespace(&p);
+                    wrench_preprocessor_skip_whitespace(context, &p);
                     const char* msg_start = p;
 
                     while (*p && *p != '\n')
@@ -2264,7 +2641,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
                     /* Trim trailing/leading whitespace inside the parens.
                      */
-                    wrench_preprocessor_skip_whitespace(&msg_start);
+                    wrench_preprocessor_skip_whitespace(context, &msg_start);
 
                     while (msg_end > msg_start && (*(msg_end - 1) == ' ' || *(msg_end - 1) == '\t'))
                     {
@@ -2294,7 +2671,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
             }
             else if (dir_len == 7 && wrench_strncmp(dir_start, "include", 7) == 0)
             {
-                wrench_preprocessor_skip_whitespace(&p);
+                wrench_preprocessor_skip_whitespace(context, &p);
 
                 char quote = *p;
                 char* expanded_include = NULL;
@@ -2331,7 +2708,7 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
                     expanded_include = exp_str.data;
                     inc_p = expanded_include;
 
-                    wrench_preprocessor_skip_whitespace(&inc_p);
+                    wrench_preprocessor_skip_whitespace(context, &inc_p);
                     quote = *inc_p;
                 }
 
@@ -2564,7 +2941,88 @@ static bool wrench_preprocessor_internal(wrench_preprocessor_t* context, const c
 
         while (*p && *p != '\n')
         {
-            if (wrench_preprocessor_is_ident_start(*p))
+            if (context->keep_comments &&
+                /*context->block_comment_start_len > 0 &&*/
+                *p == context->block_comment_start[0] &&
+                wrench_strncmp(p, context->block_comment_start, context->block_comment_start_len) == 0)
+            {
+                int depth = 1;
+
+                if (!wrench_preprocessor_string_builder_append_len(context, out, p, context->block_comment_start_len))
+                {
+                    return false; // TODO: cleanup
+                }
+
+                p += context->block_comment_start_len;
+
+                while (*p)
+                {
+                    if (/*context->block_comment_start_len > 0 &&*/
+                        *p == context->block_comment_start[0] &&
+                        wrench_strncmp(p, context->block_comment_start, context->block_comment_start_len) == 0)
+                    {
+                        depth++;
+
+                        if (!wrench_preprocessor_string_builder_append_len(context, out, p, context->block_comment_start_len))
+                        {
+                            return false; // TODO: cleanup
+                        }
+
+                        p += context->block_comment_start_len;
+                    }
+                    else if (/*context->block_comment_end_len > 0 &&*/
+                            *p == context->block_comment_end[0] &&
+                            wrench_strncmp(p, context->block_comment_end, context->block_comment_end_len) == 0)
+                    {
+                        depth--;
+
+                        if (!wrench_preprocessor_string_builder_append_len(context, out, p, context->block_comment_end_len))
+                        {
+                            return false; // TODO: cleanup
+                        }
+
+                        p += context->block_comment_end_len;
+
+                        if (depth == 0)
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        if (*p == '\n')
+                        {
+                            context->current_line++;
+                        }
+
+                        if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
+                        {
+                            return false; // TODO: cleanup
+                        }
+                    }
+                }
+            }
+            else if (context->keep_comments &&
+                    /*context->single_comment_start_len > 0 &&*/
+                    *p == context->single_comment_start[0] &&
+                    wrench_strncmp(p, context->single_comment_start, context->single_comment_start_len) == 0)
+            {
+                if (!wrench_preprocessor_string_builder_append_len(context, out, p, context->single_comment_start_len))
+                {
+                    return false; // TODO: cleanup
+                }
+
+                p += context->single_comment_start_len;
+
+                while (*p && *p != '\n')
+                {
+                    if (!wrench_preprocessor_string_builder_append_char(context, out, *p++))
+                    {
+                        return false; // TODO: cleanup
+                    }
+                }
+            }
+            else if (wrench_preprocessor_is_ident_start(*p))
             {
                 const char* id_start = p;
 
@@ -2761,6 +3219,18 @@ WPP_IMPL(wrench_preprocessor_p, create, (const char* base_path))
     #endif
     context->directive_prefix = WRENCH_PREPROCESSOR_DEFAULT_DIRECTIVE_PREFIX;
 
+    // Enable comment stripping by default.
+    context->keep_comments = false;
+
+    wrench_strncpy(context->single_comment_start, "//", 2);
+    context->single_comment_start_len = 2;
+
+    wrench_strncpy(context->block_comment_start, "/*", 2);
+    context->block_comment_start_len = 2;
+
+    wrench_strncpy(context->block_comment_end, "*/", 2);
+    context->block_comment_end_len = 2;
+
     return context;
 }
 
@@ -2884,7 +3354,7 @@ WPP_IMPL(bool, define, (wrench_preprocessor_p context, const char* signature, co
 
         while (*p && *p != ')')
         {
-            wrench_preprocessor_skip_whitespace(&p);
+            wrench_preprocessor_skip_whitespace(context, &p);
             const char* arg_start = p;
 
             while (wrench_preprocessor_is_ident_part(*p) || *p == '.')
@@ -2922,7 +3392,7 @@ WPP_IMPL(bool, define, (wrench_preprocessor_p context, const char* signature, co
                 m->num_params++;
             }
 
-            wrench_preprocessor_skip_whitespace(&p);
+            wrench_preprocessor_skip_whitespace(context, &p);
 
             if (*p == ',')
             {
@@ -3078,6 +3548,262 @@ WPP_IMPL(char, get_directive_prefix, (wrench_preprocessor_p context))
 {
     wrench_assert(context != NULL, "");
     return context->directive_prefix;
+}
+
+WPP_IMPL(void, set_keep_comments, (wrench_preprocessor_p context, bool enabled))
+{
+    wrench_assert(context != NULL, "");
+    context->keep_comments = enabled;
+}
+
+WPP_IMPL(bool, get_keep_comments, (wrench_preprocessor_p context))
+{
+    wrench_assert(context != NULL, "");
+    return context->keep_comments;
+}
+
+WPP_IMPL(void, set_comment_strings, (wrench_preprocessor_p context, const char* single_start, const char* block_start, const char* block_end))
+{
+    wrench_assert(context != NULL, "");
+
+    wrench_assert(single_start != NULL, "");
+    wrench_assert(block_start != NULL, "");
+    wrench_assert(block_end != NULL, "");
+
+    wrench_snprintf(context->single_comment_start, sizeof(context->single_comment_start), "%s", single_start);
+    context->single_comment_start_len = wrench_strlen(context->single_comment_start);
+
+    wrench_snprintf(context->block_comment_start, sizeof(context->block_comment_start), "%s", block_start);
+    context->block_comment_start_len = wrench_strlen(context->block_comment_start);
+
+    wrench_snprintf(context->block_comment_end, sizeof(context->block_comment_end), "%s", block_end);
+    context->block_comment_end_len = wrench_strlen(context->block_comment_end);
+}
+
+WPP_IMPL(void, dump_state, (wrench_preprocessor_p context, FILE* stream))
+{
+    wrench_assert(context != NULL, "");
+    wrench_assert(stream != NULL, "");
+
+    wrench_fprintf(stream, "----------------------------------------\n");
+    wrench_fprintf(stream, "MACROS\n");
+    wrench_fprintf(stream, "----------------------------------------\n");
+
+    for(wrench_preprocessor_macro_t* macro = ae_internal_preprocessor->macros;
+        macro != NULL;
+        macro = macro->next)
+    {
+        wrench_fprintf(stream, "%s\n", macro->name);
+    }
+
+    wrench_fprintf(stream, "----------------------------------------\n");
+    wrench_fprintf(stream, "INCLUDE DIRECTORIES\n");
+    wrench_fprintf(stream, "----------------------------------------\n");
+
+    for(wrench_preprocessor_include_directory_t* include_dir = ae_internal_preprocessor->include_dirs;
+        include_dir != NULL;
+        include_dir = include_dir->next)
+    {
+        wrench_fprintf(stream, "%s\n", include_dir->path);
+    }
+
+    wrench_fprintf(stream, "----------------------------------------\n");
+    wrench_fprintf(stream, "MISC STATE\n");
+    wrench_fprintf(stream, "----------------------------------------\n");
+
+    wrench_fprintf(stream, "base_path: \"%s\"\n", context->base_path);
+    wrench_fprintf(stream, "counter: %i\n", context->counter);
+    wrench_fprintf(stream, "keep_spliced_lines: %s\n", context->keep_spliced_lines ? "true" : "false");
+    wrench_fprintf(stream, "directive_prefix: '%c'\n", context->directive_prefix);
+
+    wrench_fprintf(stream, "keep_comments: %s\n", context->keep_comments ? "true" : "false");
+    wrench_fprintf(stream, "single_comment_start: \"%s\"\n", context->single_comment_start);
+    wrench_fprintf(stream, "block_comment_start: \"%s\"\n", context->block_comment_start);
+    wrench_fprintf(stream, "block_comment_end: \"%s\"\n", context->block_comment_end);
+
+    // TODO: date_str
+    // TODO: time_str
+
+    // TODO: current_file
+    // TODO: error_string
+
+    wrench_fprintf(stream, "----------------------------------------\n");
+}
+
+WPP_IMPL(void, minify, (wrench_preprocessor_p context, char* input))
+{
+    wrench_assert(context != NULL, "");
+    wrench_assert(input != NULL, "");
+
+    wrench_assert(context->block_comment_start_len > 0, "");
+    wrench_assert(context->block_comment_end_len > 0, "");
+    wrench_assert(context->single_comment_start_len > 0, "");
+
+    #define BYPASS_STRING_LITERALS()                                                        \
+                                                                                            \
+        /* Detect entry into a string literal to prevent treating contents as comments.     \
+         */                                                                                 \
+        if (!in_string && (*r == '"' || *r == '\''))                                        \
+        {                                                                                   \
+            quote_char = *r;                                                                \
+            in_string = 1;                                                                  \
+                                                                                            \
+            *w++ = *r++;                                                                    \
+            continue;                                                                       \
+        }                                                                                   \
+                                                                                            \
+        /* If inside a string, copy everything verbatim until the closing quote is found.   \
+         */                                                                                 \
+        if (in_string)                                                                      \
+        {                                                                                   \
+            if (*r == '\\' && *(r + 1) != '\0')                                             \
+            {                                                                               \
+                /* Handle escaped characters (e.g., \") inside the string.                  \
+                 */                                                                         \
+                *w++ = *r++;                                                                \
+            }                                                                               \
+            else if (*r == quote_char)                                                      \
+            {                                                                               \
+                /* Detect closing quote to exit string state.                               \
+                 */                                                                         \
+                in_string = 0;                                                              \
+            }                                                                               \
+                                                                                            \
+            *w++ = *r++;                                                                    \
+            continue;                                                                       \
+        }                                                                                   \
+
+    #define IS_WHITESPACE(c) ((c) == ' ' || (c) == '\t' || (c) == '\r')
+
+    if (!context->keep_comments)
+    {
+        char* r = input;
+        char* w = input;
+
+        char quote_char = 0;
+        int in_string = 0;
+
+        while (*r)
+        {
+            BYPASS_STRING_LITERALS();
+
+            if (/*context->block_comment_start_len > 0 &&*/
+                *r == context->block_comment_start[0] &&
+                wrench_strncmp(r, context->block_comment_start, context->block_comment_start_len) == 0)
+            {
+                r += context->block_comment_start_len;
+                int depth = 1;
+
+                while (*r && depth > 0)
+                {
+                    if (/*context->block_comment_start_len > 0 &&*/
+                        *r == context->block_comment_start[0] &&
+                        wrench_strncmp(r, context->block_comment_start, context->block_comment_start_len) == 0)
+                    {
+                        r += context->block_comment_start_len;
+                        depth++;
+                    }
+                    else if (/*context->block_comment_end_len > 0 &&*/
+                            *r == context->block_comment_end[0] &&
+                            wrench_strncmp(r, context->block_comment_end, context->block_comment_end_len) == 0)
+                    {
+                        r += context->block_comment_end_len;
+                        depth--;
+                    }
+                    else
+                    {
+                        r++;
+                    }
+                }
+
+                continue;
+            }
+
+            if (/*context->single_comment_start_len > 0 &&*/
+                *r == context->single_comment_start[0] &&
+                wrench_strncmp(r, context->single_comment_start, context->single_comment_start_len) == 0)
+            {
+                while (*r && *r != '\n')
+                {
+                    r++;
+                }
+
+                continue;
+            }
+
+            *w++ = *r++;
+        }
+
+        *w = '\0';
+    }
+
+    /* TODO: Comment stripping and whitespace removal could be done in a single pass.
+     */
+    if (1)
+    {
+        char* r = input;
+        char* w = input;
+
+        char quote_char = 0;
+        int in_string = 0;
+
+        while (*r)
+        {
+            BYPASS_STRING_LITERALS();
+
+            /* Strip leading whitespace and empty lines. If at the
+             * start of string or after a newline, skip whitespace.
+             */
+            if (w == input || *(w - 1) == '\n')
+            {
+                char* start = r;
+
+                while (IS_WHITESPACE(*r))
+                {
+                    r++;
+                }
+
+                /* If this line is just a newline, skip it (strips empty lines).
+                 */
+                if (*r == '\n')
+                {
+                    r++;
+                    continue;
+                }
+
+                if (r != start)
+                {
+                    continue;
+                }
+            }
+
+            /* Strip trailing and internal whitespace (only on current line).
+             */
+            if (IS_WHITESPACE(*r))
+            {
+                while (IS_WHITESPACE(*r))
+                {
+                    r++;
+                }
+
+                if (*r != '\n' && *r != '\0')
+                {
+                    /* Collapse multiple internal spaces to a single space.
+                     */
+                    *w++ = ' ';
+                }
+
+                continue;
+            }
+
+            *w++ = *r++;
+        }
+
+        *w = '\0';
+    }
+
+    #undef BYPASS_STRING_LITERALS
+    #undef IS_WHITESPACE
 }
 
 #endif /* __WRENCH_PREPROCESSOR_C__ */

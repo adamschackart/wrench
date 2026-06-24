@@ -565,6 +565,115 @@ static void vm_WrenVM_signatureArity(WrenVM* vm)
     wrenSetSlotInt(vm, 0, wrenSignatureArity(wrenGetSlotString(vm, 1)));
 }
 
+static void vm_WrenVM_callGetter(WrenVM* vm)
+{
+    #if WRENCH_DEBUG
+    {
+        vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+        WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+        wrench_assert(self->vm == vm, "TODO");
+    }
+    #endif /* WRENCH_DEBUG */
+
+    const char* name = wrenGetSlotString(vm, 2);
+    WrenHandle* method = wrenMakeCallHandle(vm, name);
+
+    if (method == NULL)
+    {
+        char error[1024];
+        wrench_snprintf(error, sizeof(error), "Failed to create call handle for \"%s\" getter!", name);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    /* `wrenCall` expects the receiver in slot 0.
+     */
+    WrenHandle* object = wrenGetSlotHandle(vm, 1);
+    wrenSetSlotHandle(vm, 0, object);
+
+    switch (wrenCall(vm, method))
+    {
+        // TODO
+
+        default: break;
+    }
+
+    wrenReleaseHandle(vm, method);
+    wrenReleaseHandle(vm, object);
+}
+
+static void vm_WrenVM_callSetter(WrenVM* vm)
+{
+    #if WRENCH_DEBUG
+    {
+        vm_WrenVM* self = (vm_WrenVM*)wrenGetSlotForeign(vm, 0);
+        WRENCH_CHECK_MAGIC_TAG(self, vm, WrenVM);
+
+        wrench_assert(self->vm == vm, "TODO");
+    }
+    #endif /* WRENCH_DEBUG */
+
+    char signature[1024];
+    const char* name = wrenGetSlotString(vm, 2);
+
+    if (wrench_snprintf(signature, sizeof(signature), "%s=(_)", name) < 0)
+    {
+        wrenSetSlotString(vm, 0, "Method signature exceeded string buffer size.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    WrenHandle* method = wrenMakeCallHandle(vm, (const char*)signature);
+
+    if (method == NULL)
+    {
+        char error[1024];
+        wrench_snprintf(error, sizeof(error), "Failed to create call handle for \"%s\" setter!", name);
+
+        wrenSetSlotString(vm, 0, (const char*)error);
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    WrenHandle* object = wrenGetSlotHandle(vm, 1);
+    WrenHandle* value = wrenGetSlotHandle(vm, 3);
+
+    wrenSetSlotHandle(vm, 0, object);
+    wrenSetSlotHandle(vm, 1, value);
+
+    switch (wrenCall(vm, method))
+    {
+        case WREN_RESULT_SUCCESS: break;
+
+        case WREN_RESULT_COMPILE_ERROR:
+        case WREN_RESULT_RUNTIME_ERROR:
+        {
+            wrenSetSlotString(vm, 0, wrenGetErrorString(vm));
+            wrenAbortFiber(vm, 0);
+
+            // Let cleanup happen.
+            // return;
+        }
+        break;
+
+        default:
+        {
+            wrench_assert(0, "");
+        }
+        break;
+    }
+
+    wrenReleaseHandle(vm, method);
+    wrenReleaseHandle(vm, object);
+    wrenReleaseHandle(vm, value);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -783,6 +892,9 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
             WREN_CODE("callStack { callStack_(null) }");
 
             WREN_METHOD(vm, WrenVM, true, signatureArity, "(signature)", "(_)");
+
+            WREN_METHOD(vm, WrenVM, false, callGetter, "(object, name)", "(_,_)");
+            WREN_METHOD(vm, WrenVM, false, callSetter, "(object, name, value)", "(_,_,_)");
 
             // TODO: defaultReallocate
             // TODO: defaultResolveModule

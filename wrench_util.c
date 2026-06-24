@@ -234,6 +234,135 @@ static void util_StringUtil_generateVisualStudioGUID(WrenVM* vm)
     wrenSetSlotString(vm, 0, (const char*)output);
 }
 
+static void util_StringUtil_escapeAndQuote(WrenVM* vm)
+{
+    const char* input = wrenGetSlotString(vm, 1);
+
+    /* Max expansion is 6 bytes per character (\uXXXX) + 2 quotes + 1 NUL.
+     */
+    const size_t input_length = wrench_strlen(input);
+    const size_t output_size = input_length * 6 + 3;
+
+    char* output = (char*)wrenStackMalloc(vm, output_size);
+    char* s = output;
+
+    if (output == NULL)
+    {
+        wrenSetSlotString(vm, 0, "Out of memory! Wrench temp string alloc failed.");
+        wrenAbortFiber(vm, 0);
+
+        return;
+    }
+
+    wrench_assert(s + 1 <= output + (output_size - 1), "");
+    *s++ = '"';
+
+    while (*input)
+    {
+        // Cast prevents sign extension + UTF-8 capture.
+        const unsigned char c = (unsigned char)*input++;
+
+        char escape = 0;
+        switch (c)
+        {
+            case '\"': escape = '"';  break;
+            case '\\': escape = '\\'; break;
+            case '\b': escape = 'b';  break;
+            case '\f': escape = 'f';  break;
+            case '\n': escape = 'n';  break;
+            case '\r': escape = 'r';  break;
+            case '\t': escape = 't';  break;
+        }
+
+        if (escape)
+        {
+            wrench_assert(s + 1 <= output + (output_size - 1), "");
+            *s++ = '\\';
+
+            wrench_assert(s + 1 <= output + (output_size - 1), "");
+            *s++ = escape;
+        }
+        else if (c <= 0x1F)
+        {
+            char buffer[8];
+            wrench_snprintf(buffer, sizeof(buffer), "\\u%04X", c);
+
+            wrench_assert(s + 6 <= output + (output_size - 1), "");
+            wrench_memcpy(s, buffer, 6);
+
+            s += 6;
+        }
+        else if (c >= 0x80)
+        {
+            // Determine the expected unicode sequence length.
+            int bytes;
+
+            if ((c & 0xE0) == 0xC0)
+            {
+                bytes = 1;
+            }
+            else if ((c & 0xF0) == 0xE0)
+            {
+                bytes = 2;
+            }
+            else if ((c & 0xF8) == 0xF0)
+            {
+                bytes = 3;
+            }
+            else
+            {
+                // Drop invalid leading bytes (e.g. orphan continuation bytes).
+                continue;
+            }
+
+            // Validate upcoming continuation bytes without consuming them yet.
+            int valid = 1;
+            const char* temp = input;
+
+            for (int i = 0; i < bytes; i++)
+            {
+                if (!*temp || (*temp & 0xC0) != 0x80)
+                {
+                    valid = 0;
+                    break;
+                }
+
+                temp++;
+            }
+
+            if (valid)
+            {
+                // Pass the leading byte + continuation bytes through natively.
+                *s++ = (char)c;
+
+                for (int i = 0; i < bytes; i++)
+                {
+                    *s++ = *input++;
+                }
+            }
+            else
+            {
+                // Drop the malformed sequence.
+                continue;
+            }
+        }
+        else
+        {
+            wrench_assert(s + 1 <= output + (output_size - 1), "");
+            *s++ = (char)c;
+        }
+    }
+
+    wrench_assert(s + 1 <= output + (output_size - 1), "");
+    *s++ = '"';
+
+    wrench_assert(s + 1 <= output + output_size, "");
+    *s++ = '\0';
+
+    wrenSetSlotString(vm, 0, output);
+    wrenStackFree(vm, output, output_size);
+}
+
 /*
 ================================================================================
  * ~~ [ (un)hook ] ~~ *
@@ -391,6 +520,26 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
             // TODO: bin16
             // TODO: bin32
 
+            /* TODO: Implement this method in C.
+             */
+            if (!wrenCode(vm,
+
+            "static exponent(value, power) {\n"
+                "if (power == 0) {\n"
+                    "return 1\n"
+                "}\n"
+
+                "var result = value\n"
+
+                "for (i in 1...power) {\n"
+                    "result = result * value\n"
+                "}\n"
+
+                "return result\n"
+            "}\n"
+
+            )) { return false; }
+
             if (!wrenCode(vm,
 
             "static toRoman(val, s) {\n"
@@ -472,6 +621,8 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS_EX(util, StringUtil, NULL, NULL);
         {
+            WREN_CODE("static reverse(str) { str[-1..0] }");
+
             if (!wrenCode(vm,
 
             "static codePoint(c) {\n"
@@ -671,6 +822,38 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
                 )) { return false; }
             }
 
+            /* TODO: C versions of these methods.
+             */
+            if (!wrenCode(vm,
+
+            "static leftPad(s, count, with) {\n"
+                "if (s.count >= count) {\n"
+                    "return s\n"
+                "}\n"
+
+                "var paddingNeeded = count - s.count\n"
+
+                "var pad = with * (paddingNeeded / with.count).ceil\n"
+                "pad = pad[0...paddingNeeded]\n"
+
+                "return pad + s\n"
+            "}\n"
+
+            "static rightPad(s, count, with) {\n"
+                "if (s.count >= count) {\n"
+                    "return s\n"
+                "}\n"
+
+                "var paddingNeeded = count - s.count\n"
+
+                "var pad = with * paddingNeeded\n"
+                "pad = pad[0...paddingNeeded]\n"
+
+                "return s + pad\n"
+            "}\n"
+
+            )) { return false; }
+
             /* Visual Studio strictly expects GUIDs in the 8-4-4-4-12 hex format. This enables us to
              * generate a deterministic psuedo-hash to ensure the solution doesn't constantly reload.
              */
@@ -704,6 +887,90 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 
                     // Maps to XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX.
                     "return hex1 + \"-\" + hex2[0...4] + \"-\" + hex2[4...8] + \"-\" + hex3[0...4] + \"-\" + hex3[4...8] + hex4\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            /* For JSON serialization.
+             */
+            if (1)
+            {
+                WREN_METHOD(util, StringUtil, true, escapeAndQuote, "(obj)", "(_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
+
+                "static escapeAndQuote(obj) {\n"
+                    "var substrings = []\n"
+
+                    // Escape special characters.
+                    "for (char in obj) {\n"
+                        "if (char == \"\\\"\") {\n"
+                            "substrings.add(\"\\\\\\\"\")\n"
+                        "} else if (char == \"\\\\\") {\n"
+                            "substrings.add(\"\\\\\\\\\")\n"
+                        "} else if (char == \"\\b\") {\n"
+                            "substrings.add(\"\\\\b\")\n"
+                        "} else if (char == \"\\f\") {\n"
+                            "substrings.add(\"\\\\f\")\n"
+                        "} else if (char == \"\\n\") {\n"
+                            "substrings.add(\"\\\\n\")\n"
+                        "} else if (char == \"\\r\") {\n"
+                            "substrings.add(\"\\\\r\")\n"
+                        "} else if (char == \"\\t\") {\n"
+                            "substrings.add(\"\\\\t\")\n"
+                        /*
+                        "} else if (char.codePoints[0] <= 0x1f) {\n"
+                            // Control characters.
+                            "var pt = char.codePoints[0]\n"
+                            "var hex = StringUtil.leftPad(StringUtil.toHex(pt), 4, \"0\")\n"
+
+                            "substrings.add(\"\\\\u\" + hex)\n"
+                        */
+                        "} else if (char.bytes[0] <= 0x1f) {\n"
+                            // Control characters.
+                            "var byte = char.bytes[0]\n"
+                            "var hex = StringUtil.leftPad(StringUtil.toHex(byte), 4, \"0\")\n"
+
+                            "substrings.add(\"\\\\u\" + hex)\n"
+                        "} else {\n"
+                            "substrings.add(char)\n"
+                        "}\n"
+                    "}\n"
+
+                    "return \"\\\"\" + substrings.join(\"\") + \"\\\"\"\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
+            /* TODO: This is a duplicate of NumUtil.hex - should remove it after testing.
+             */
+            if (0)
+            {
+                // TODO: C version.
+            }
+            else
+            {
+                if (!wrenCode(vm,
+
+                "static toHex(byte) {\n"
+                    "if (byte == 0) {\n"
+                        "return \"0\"\n"
+                    "}\n"
+
+                    "var hex_chars = [\"0\", \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\", \"9\", \"A\", \"B\", \"C\", \"D\", \"E\", \"F\"]\n"
+                    "var hex = \"\"\n"
+
+                    "while (byte > 0) {\n"
+                        "var c = byte % 16\n"
+                        "hex = hex_chars[c] + hex\n"
+                        "byte = byte >> 4\n"
+                    "}\n"
+
+                    "return hex\n"
                 "}\n"
 
                 )) { return false; }

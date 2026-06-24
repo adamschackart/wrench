@@ -18,6 +18,11 @@ rm -rf *.dSYM
 rm -rf *.dwo
 rm -rf *.d
 
+rm -rf wrench_base16.c
+rm -rf wrench_base32.c
+rm -rf wrench_base64.c
 rm -rf wrench_config.c
+rm -rf wrench_json.c
+rm -rf wrench_markov.c
 rm -rf wrench_project.c
 rm -rf wrench_scheduler.c

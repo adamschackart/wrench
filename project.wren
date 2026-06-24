@@ -13,6 +13,8 @@ import "time" for Timer
 import "util" for NumUtil, StringUtil
 import "vm" for WrenVM
 
+//File.ensureCRLF = true
+
 /*
 ================================================================================
  * ~~ [ utilities ] ~~ *
@@ -104,6 +106,27 @@ class Util {
                 "}",
             ].join("\n"))
 
+            /* Enable parsing of single hex digits.
+             */
+            data = data.replace("  if (string->length == 0) RETURN_NULL;",
+            [
+                "  if (string->length == 0) RETURN_NULL;",
+                "",
+                "  if (string->length == 1)",
+                "  {",
+                "    switch (string->value[0])",
+                "    {",
+                "      case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':",
+                "        RETURN_NUM((double)((string->value[0] - 'A') + 10));",
+                "",
+                "      case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':",
+                "        RETURN_NUM((double)((string->value[0] - 'a') + 10));",
+                "",
+                "      default: break;",
+                "    }",
+                "  }",
+            ].join("\n"))
+
             var index
             var lines = File.readLines("wren/src/vm/wren_core.wren")
 
@@ -153,6 +176,19 @@ class Util {
             }
 
             // TODO: findIndex
+
+            // Sequence iteration similar to Python's enumerate() function.
+            [
+                "  enumerate(func) {",
+                "    var i = 0",
+                "",
+                "    for (item in this) {",
+                "      func.call(i, item)",
+                "      i = i + 1",
+                "    }",
+                "  }",
+                "",
+            ][-1..0].each { |line| lines.insert(index, line) }
 
             /* Faster Sequence.where (removes redundant call to iteratorValue), thanks to Thorben Krüger.
              */
@@ -1106,6 +1142,80 @@ class Util {
                 "",
                 "  #define INTERPRET_LOOP",
             ].join("\n"))
+        }
+
+        return patchWrenAmalgamationForExtendedFieldLimit_(filename, data)
+    }
+
+    static patchWrenAmalgamationForExtendedFieldLimit_(filename, data) {
+        if (filename == "wren/src/vm/wren_common.h") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace("#define MAX_FIELDS 255", "#define MAX_FIELDS 65535")
+        } else if (filename == "wren/src/vm/wren_compiler.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace(
+            [
+                "(uint8_t)wrenSymbolTableCount(&classInfo.fields);",
+            ].join("\n"),
+            [
+                "(uint8_t)((wrenSymbolTableCount(&classInfo.fields) >> 8) & 0xFF);",
+                "    compiler->fn->code.data[numFieldsInstruction + 1] =",
+                "        (uint8_t)(wrenSymbolTableCount(&classInfo.fields) & 0xFF);"
+            ].join("\n"))
+
+            data = data.replace(
+            [
+                "numFieldsInstruction = emitByteArg(compiler, CODE_CLASS, 255);",
+            ].join("\n"),
+            [
+                "emitByte(compiler, CODE_CLASS);",
+                "numFieldsInstruction = compiler->fn->code.count;",
+                "emitShort(compiler, 0xFFFF);",
+            ].join("\n"))
+
+            data = data.replace("emitByteArg(compiler, isLoad ? CODE_LOAD_FIELD", "emitShortArg(compiler, isLoad ? CODE_LOAD_FIELD")
+            data = data.replace("case CODE_STORE_UPVALUE:", "case CODE_STORE_UPVALUE: return 1;")
+
+            /* TODO: Add to utils.
+             */
+            var replaceFirst = Fn.new { |str, old, swap|
+                var index = str.indexOf(old)
+
+                // If the substring isn't found, return the original string.
+                if (index == -1) return str
+
+                // Combine the part before the match, the swap, and the part after the match.
+                return str[0...index] + swap + str[index + old.count...str.count]
+            }
+
+            data = replaceFirst.call(data, "case CODE_STORE_FIELD:", "case CODE_STORE_FIELD: return 2;")
+
+            data = data.replace(
+            [
+                "fn->code.data[ip + 1] += classObj->superclass->numFields;"
+            ].join("\n"),
+            [
+                "{",
+                "uint16_t field = (fn->code.data[ip + 1] << 8) | fn->code.data[ip + 2];",
+                "field += classObj->superclass->numFields;",
+                "fn->code.data[ip + 1] = (field >> 8) & 0xFF;",
+                "fn->code.data[ip + 2] = field & 0xFF;",
+                "}",
+            ].join("\n"))
+        } else if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace("createClass(vm, READ_BYTE(), NULL);", "createClass(vm, READ_SHORT(), NULL);")
+            data = data.replace("255 fields", "65535 fields")
+            data = data.replace("uint8_t field = READ_BYTE();", "uint16_t field = READ_SHORT();")
         }
 
         return data
@@ -4716,8 +4826,23 @@ var main = Fn.new {
     if (unity) {
         var headers = Project.new(null, "headers")
 
+        HeaderNode.new(headers, "base16", "module", "base16.wren", "wrench_base16.c")
+        project.define("WRENCH_HAVE_BASE16")
+
+        HeaderNode.new(headers, "base32", "module", "base32.wren", "wrench_base32.c")
+        project.define("WRENCH_HAVE_BASE32")
+
+        HeaderNode.new(headers, "base64", "module", "base64.wren", "wrench_base64.c")
+        project.define("WRENCH_HAVE_BASE64")
+
         HeaderNode.new(headers, "config", "module", "config.wren", "wrench_config.c")
         project.define("WRENCH_HAVE_CONFIG")
+
+        HeaderNode.new(headers, "json", "module", "json.wren", "wrench_json.c")
+        project.define("WRENCH_HAVE_JSON")
+
+        HeaderNode.new(headers, "markov", "module", "markov.wren", "wrench_markov.c")
+        project.define("WRENCH_HAVE_MARKOV")
 
         HeaderNode.new(headers, "project", "module", "project.wren", "wrench_project.c")
         project.define("WRENCH_HAVE_PROJECT")
@@ -4890,9 +5015,34 @@ var main = Fn.new {
         node = NativeNode.new(project, "zip", "shared_library")
         node.sources.add("wrench_zip.c")
 
+        if (Path.isFile("wrench_base16.c")) {
+            node = NativeNode.new(project, "base16", "shared_library")
+            node.sources.add("wrench_base16.c")
+        }
+
+        if (Path.isFile("wrench_base32.c")) {
+            node = NativeNode.new(project, "base32", "shared_library")
+            node.sources.add("wrench_base32.c")
+        }
+
+        if (Path.isFile("wrench_base64.c")) {
+            node = NativeNode.new(project, "base64", "shared_library")
+            node.sources.add("wrench_base64.c")
+        }
+
         if (Path.isFile("wrench_config.c")) {
             node = NativeNode.new(project, "config", "shared_library")
             node.sources.add("wrench_config.c")
+        }
+
+        if (Path.isFile("wrench_json.c")) {
+            node = NativeNode.new(project, "json", "shared_library")
+            node.sources.add("wrench_json.c")
+        }
+
+        if (Path.isFile("wrench_markov.c")) {
+            node = NativeNode.new(project, "markov", "shared_library")
+            node.sources.add("wrench_markov.c")
         }
 
         if (Path.isFile("wrench_project.c")) {

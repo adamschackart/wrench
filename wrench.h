@@ -2818,6 +2818,27 @@ static size_t wrenchGlobalQuitFuncCount;
 /* Standard library modules are normally DLLs, but we can include them inline.
  */
 #if WRENCH_STDLIB
+    #ifndef WRENCH_HAVE_BASE16
+    #define WRENCH_HAVE_BASE16 0
+    #endif
+    #if WRENCH_HAVE_BASE16
+    #include <wrench_base16.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_BASE32
+    #define WRENCH_HAVE_BASE32 0
+    #endif
+    #if WRENCH_HAVE_BASE32
+    #include <wrench_base32.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_BASE64
+    #define WRENCH_HAVE_BASE64 0
+    #endif
+    #if WRENCH_HAVE_BASE64
+    #include <wrench_base64.c>
+    #endif
+
     #ifndef WRENCH_HAVE_CONFIG
     #define WRENCH_HAVE_CONFIG 0
     #endif
@@ -2837,6 +2858,20 @@ static size_t wrenchGlobalQuitFuncCount;
     #endif
     #if WRENCH_HAVE_IMAGE
     #include <wrench_image.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_JSON
+    #define WRENCH_HAVE_JSON 0
+    #endif
+    #if WRENCH_HAVE_JSON
+    #include <wrench_json.c>
+    #endif
+
+    #ifndef WRENCH_HAVE_MARKOV
+    #define WRENCH_HAVE_MARKOV 0
+    #endif
+    #if WRENCH_HAVE_MARKOV
+    #include <wrench_markov.c>
     #endif
 
     #ifndef WRENCH_HAVE_PLATFORM
@@ -2983,6 +3018,36 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
 
     #if WRENCH_STDLIB
     {
+        #if WRENCH_HAVE_BASE16
+        {
+            if (!base16WrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_BASE16 */
+
+        #if WRENCH_HAVE_BASE32
+        {
+            if (!base32WrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_BASE32 */
+
+        #if WRENCH_HAVE_BASE64
+        {
+            if (!base64WrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_BASE64 */
+
         #if WRENCH_HAVE_CONFIG
         {
             if (!configWrenInit(vm))
@@ -3012,6 +3077,26 @@ WRENCH_IMPL(WrenVM*, NewExtendedVM, (int argc, char** argv, bool call_global_ini
             }
         }
         #endif /* WRENCH_HAVE_IMAGE */
+
+        #if WRENCH_HAVE_JSON
+        {
+            if (!jsonWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_JSON */
+
+        #if WRENCH_HAVE_MARKOV
+        {
+            if (!markovWrenInit(vm))
+            {
+                wrenFreeExtendedVM(vm, false);
+                return NULL;
+            }
+        }
+        #endif /* WRENCH_HAVE_MARKOV */
 
         #if WRENCH_HAVE_PLATFORM
         {
@@ -3232,6 +3317,18 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
         }
         #endif /* WRENCH_HAVE_PLATFORM */
 
+        #if WRENCH_HAVE_MARKOV
+        {
+            markovWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_MARKOV */
+
+        #if WRENCH_HAVE_JSON
+        {
+            jsonWrenQuit();
+        }
+        #endif /* WRENCH_HAVE_JSON */
+
         #if WRENCH_HAVE_IMAGE
         {
             imageWrenQuit();
@@ -3249,6 +3346,24 @@ WRENCH_IMPL(void, FreeExtendedVM, (WrenVM* vm, bool call_global_quit_funcs))
             configWrenQuit();
         }
         #endif /* WRENCH_HAVE_CONFIG */
+
+        #if WRENCH_HAVE_BASE64
+        {
+            base64WrenQuit();
+        }
+        #endif /* WRENCH_HAVE_BASE64 */
+
+        #if WRENCH_HAVE_BASE32
+        {
+            base32WrenQuit();
+        }
+        #endif /* WRENCH_HAVE_BASE32 */
+
+        #if WRENCH_HAVE_BASE16
+        {
+            base16WrenQuit();
+        }
+        #endif /* WRENCH_HAVE_BASE16 */
     }
     #endif /* WRENCH_STDLIB */
 }

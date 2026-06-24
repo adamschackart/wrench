@@ -37,7 +37,7 @@ if not exist "wren\" (
         git clone https://github.com/wren-lang/wren.git
     )
 
-    python3 -B wren/util/generate_amalgamation.py >> wren.c
+    python -B wren/util/generate_amalgamation.py >> wren.c
 )
 
 if not exist "zip\" (

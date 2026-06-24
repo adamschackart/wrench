@@ -58,10 +58,8 @@ An excellent example of bridging C with wren is available in `wrench_image.c` or
 # TODO (stdlib modules)
 
 - regular expressions (regex) module.
-- json module.
 - xml module.
 - diff module.
-- base64 module.
 - csv module.
 - logging module.
 

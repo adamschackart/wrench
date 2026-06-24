@@ -20,6 +20,11 @@ del *.dll /q
 del *.exp /q
 del *.ilk /q
 
+del wrench_base16.c /q
+del wrench_base32.c /q
+del wrench_base64.c /q
 del wrench_config.c /q
+del wrench_json.c /q
+del wrench_markov.c /q
 del wrench_project.c /q
 del wrench_scheduler.c /q
