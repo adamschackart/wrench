@@ -79,6 +79,45 @@ static void util_NumUtil_hex32(WrenVM* vm)
     wrenSetSlotString(vm, 0, wrench_internal_hex32(wrenGetSlotInt(vm, 1)));
 }
 
+static double wrench_internal_exponent(double value, int power)
+{
+    if (power == 0)
+    {
+        return 1.0;
+    }
+
+    if (power < 0)
+    {
+        value = 1.0 / value;
+        power = -power;
+    }
+
+    double result = 1.0;
+    double current_product = value;
+
+    // Exponentiation by squaring.
+    while (power > 0)
+    {
+        if (power % 2 == 1)
+        {
+            result *= current_product;
+        }
+
+        current_product *= current_product;
+        power /= 2;
+    }
+
+    return result;
+}
+
+static void util_NumUtil_exponent(WrenVM* vm)
+{
+    const double value = wrenGetSlotDouble(vm, 1);
+    const int power = wrenGetSlotInt(vm, 2);
+
+    wrenSetSlotDouble(vm, 0, wrench_internal_exponent(value, power));
+}
+
 /*
 ================================================================================
  * ~~ [ string utilities ] ~~ *
@@ -501,6 +540,8 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
                 )) { return false; }
             }
 
+            /* TODO: Implement this method in C.
+             */
             if (!wrenCode(vm,
 
             /* Behaves the same as Python's hex() function.
@@ -520,25 +561,30 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
             // TODO: bin16
             // TODO: bin32
 
-            /* TODO: Implement this method in C.
-             */
-            if (!wrenCode(vm,
+            if (1)
+            {
+                WREN_METHOD(util, NumUtil, true, exponent, "(value, power)", "(_,_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
 
-            "static exponent(value, power) {\n"
-                "if (power == 0) {\n"
-                    "return 1\n"
+                "static exponent(value, power) {\n"
+                    "if (power == 0) {\n"
+                        "return 1\n"
+                    "}\n"
+
+                    "var result = value\n"
+
+                    "for (i in 1...power) {\n"
+                        "result = result * value\n"
+                    "}\n"
+
+                    "return result\n"
                 "}\n"
 
-                "var result = value\n"
-
-                "for (i in 1...power) {\n"
-                    "result = result * value\n"
-                "}\n"
-
-                "return result\n"
-            "}\n"
-
-            )) { return false; }
+                )) { return false; }
+            }
 
             if (!wrenCode(vm,
 

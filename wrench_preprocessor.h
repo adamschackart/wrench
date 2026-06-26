@@ -3589,7 +3589,7 @@ WPP_IMPL(void, dump_state, (wrench_preprocessor_p context, FILE* stream))
     wrench_fprintf(stream, "MACROS\n");
     wrench_fprintf(stream, "----------------------------------------\n");
 
-    for(wrench_preprocessor_macro_t* macro = ae_internal_preprocessor->macros;
+    for(wrench_preprocessor_macro_t* macro = context->macros;
         macro != NULL;
         macro = macro->next)
     {
@@ -3600,7 +3600,7 @@ WPP_IMPL(void, dump_state, (wrench_preprocessor_p context, FILE* stream))
     wrench_fprintf(stream, "INCLUDE DIRECTORIES\n");
     wrench_fprintf(stream, "----------------------------------------\n");
 
-    for(wrench_preprocessor_include_directory_t* include_dir = ae_internal_preprocessor->include_dirs;
+    for(wrench_preprocessor_include_directory_t* include_dir = context->include_dirs;
         include_dir != NULL;
         include_dir = include_dir->next)
     {
