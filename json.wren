@@ -34,6 +34,7 @@ SOFTWARE.
 import "random" for Random
 
 import "util" for NumUtil
+import "util" for ObjectUtil
 import "util" for StringUtil
 
 import "vm" for WrenVM
@@ -107,7 +108,11 @@ class JSONStringifier {
         } else if (WrenVM.self.objectHasMethod(obj, "toJSON")) {
             return obj.toJSON
         } else {
-            Fiber.abort("Unexpected item in JSON writer: %(obj)")
+            if (false) {
+                Fiber.abort("Unexpected item in JSON writer: %(obj)")
+            } else {
+                stringify_(ObjectUtil.toPrimitive(obj))
+            }
         }
     }
 }

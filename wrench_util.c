@@ -446,6 +446,8 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 {
     if (!wrenBeginModule(vm, "util")) { return false; } else
     {
+        /* TODO: Should probably be `SequenceUtil` instead.
+         */
         WREN_BEGIN_CLASS_EX(util, ListUtil, NULL, NULL);
         {
             WREN_CODE("static reverse(list) { list[-1..0] }");
@@ -1028,6 +1030,31 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
             {
                 return false;
             }
+        }
+        WREN_END_CLASS();
+
+        WREN_BEGIN_CLASS_EX(util, ObjectUtil, NULL, NULL);
+        {
+            if (!wrenCode(vm,
+
+            /* Attempt to reduce an object down to basic Wren types, for JSON serialization etc.
+             */
+            "static toPrimitive(object) {\n"
+                "if (object is Num || object is Bool || object is Null || object is String) {\n"
+                    "return object\n"
+                "} else if (object is List) {\n"
+                    "return object.map { |element| toPrimitive(element) }.toList\n"
+                "} else if (object is Map) {\n"
+                    "var r = {}\n"
+
+                    "object.each { |pair| r[toPrimitive(pair.key)] = toPrimitive(pair.value) }\n"
+                    "return r\n"
+                "} else {\n"
+                    "return object.toPrimitive\n"
+                "}\n"
+            "}\n"
+
+            )) { return false; }
         }
         WREN_END_CLASS();
 
