@@ -799,6 +799,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef wrench_rename
 #define wrench_rename rename
 #endif
+#ifndef wrench_round
+#define wrench_round round
+#endif
 #ifndef wrench_setenv
 #define wrench_setenv setenv
 #endif
@@ -982,8 +985,10 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
 #ifndef WRENCH_NUM_TO_INT
 #define WRENCH_NUM_TO_INT(x) ((int)wrench_trunc(x))
 #endif
-#ifndef WRENCH_NUM_IS_INT
-#define WRENCH_NUM_IS_INT(x) (wrench_fabs(WRENCH_NUM_TO_INT(x) - (x)) < WRENCH_DBL_EPSILON)
+#if !defined(WRENCH_NUM_IS_INT)
+    //#define WRENCH_NUM_IS_INT(x) (wrench_fabs(WRENCH_NUM_TO_INT(x) - (x)) < WRENCH_DBL_EPSILON)
+    #define WRENCH_NUM_IS_INT(x) ((x) == wrench_trunc(x))
+    //#define WRENCH_NUM_IS_INT_FUZZY(x) (wrench_fabs(wrench_round(x) - (x)) <= (WRENCH_DBL_EPSILON * wrench_fabs(x)))
 #endif
 
 #ifndef WRENCH_MIN_SAFE_INT
@@ -4756,7 +4761,7 @@ int WRENCH_MAIN(int argc, char** argv)
     #else
         if (argc < 2)
         {
-            wrench_fprintf(wrench_stderr, "Usage: %s main_wren_filename\n", argv[0]);
+            wrench_fprintf(wrench_stderr, "Usage: %s <filename>\n", argv[0]);
             return EXIT_SUCCESS;
         }
 
@@ -4777,6 +4782,8 @@ int WRENCH_MAIN(int argc, char** argv)
     WRENCH_MAIN_INIT();
 
     WrenInterpretResult result;
+
+    // TODO: Option to run the C preprocessor and/or Gasket with a source and destination file.
 
     // TODO: Option to eval a Wren string, similar to Python's -c command-line arg.
 

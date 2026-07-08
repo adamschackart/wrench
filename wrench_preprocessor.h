@@ -418,6 +418,10 @@ wrench_preprocessor_t;
     #endif
 #endif /* !WRENCH_STUB */
 
+#ifndef WRENCH_ARRAY_COUNT
+#define WRENCH_ARRAY_COUNT(a) (sizeof(a) / sizeof((a)[0]))
+#endif
+
 #if !defined(WRENCH_STRINGIFY)
     #define WRENCH_STRINGIFY(s) _WRENCH_STR_IMPL(s)
     #define _WRENCH_STR_IMPL(s) #s

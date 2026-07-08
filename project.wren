@@ -49,6 +49,14 @@ class Util {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
             }
 
+            /* Return if maximum constants is exceeded.
+             */
+            data = data.replace("          MAX_CONSTANTS);",
+            [
+                "          MAX_CONSTANTS);",
+                "    return -1;",
+            ].join("\n"))
+
             /* Replace `(v)sprintf`.
              */
             data = [
@@ -125,6 +133,25 @@ class Util {
                 "      default: break;",
                 "    }",
                 "  }",
+            ].join("\n"))
+
+            /* Make Num.fromString(" ") return null rather than 0.
+             */
+            data = data.replace("  double number = strtod(string->value, &end);",
+            [
+                "  double number = strtod(string->value, &end);",
+                "  if (end == string->value) RETURN_NULL;",
+            ].join("\n"))
+
+            /* Optimized empty string concatenation. Since they're immutable, this is safe.
+             */
+            data = data.replace("  RETURN_VAL(wrenStringFormat(vm, \"@@\", args[0], args[1]));",
+            [
+                "",
+                "  if (AS_STRING(args[0])->length == 0) RETURN_VAL(args[1]);",
+                "  if (AS_STRING(args[1])->length == 0) RETURN_VAL(args[0]);",
+                "",
+                "  RETURN_VAL(wrenStringFormat(vm, \"@@\", args[0], args[1]));",
             ].join("\n"))
 
             var index
@@ -255,6 +282,36 @@ class Util {
                 ][-1..0].each { |line| lines.insert(index + 1, line) }
             }
 
+            /* Originally callAll by Michael Hermier. TODO: This occupies a single line in the output.
+             */
+            lines[lines.indexOf("class Fn {}")] = [
+                "class Fn {",
+                "  callArgList(args) {",
+                "    var arity = args.count",
+                "",
+                "    if (arity ==  0) return call()",
+                "    if (arity ==  1) return call(args[0])",
+                "    if (arity ==  2) return call(args[0], args[1])",
+                "    if (arity ==  3) return call(args[0], args[1], args[2])",
+                "    if (arity ==  4) return call(args[0], args[1], args[2], args[3])",
+                "    if (arity ==  5) return call(args[0], args[1], args[2], args[3], args[4])",
+                "    if (arity ==  6) return call(args[0], args[1], args[2], args[3], args[4], args[5])",
+                "    if (arity ==  7) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6])",
+                "    if (arity ==  8) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])",
+                "    if (arity ==  9) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8])",
+                "    if (arity == 10) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9])",
+                "    if (arity == 11) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10])",
+                "    if (arity == 12) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11])",
+                "    if (arity == 13) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12])",
+                "    if (arity == 14) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13])",
+                "    if (arity == 15) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14])",
+                "    if (arity == 16) return call(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12], args[13], args[14], args[15])",
+                "",
+                "    Fiber.abort(arity.toString)",
+                "  }",
+                "}",
+            ].join("\n")
+
             /* Headerize core module source.
              */
             data = data.replace("#include \"wren_core.wren.inc\"",
@@ -283,6 +340,13 @@ class Util {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
             }
+
+            /* Fix Horspool shift table size in `wrenStringFind`. The shift table is indexed by every byte
+             * value and must hold 256 entries. Using UINT8_MAX as the array dimension only allocated 255
+             * elements, so shift[255] was accessed out of bounds when the relevant haystack byte was 0xFF.
+             */
+            data = data.replace("uint32_t shift[UINT8_MAX];", "uint32_t shift[UINT8_MAX + 1];")
+            data = data.replace("for (uint32_t index = 0; index < UINT8_MAX; index++)", "for (uint32_t index = 0; index <= UINT8_MAX; index++)")
 
             /* Lazy + faster string hashing.
              */
@@ -383,6 +447,26 @@ class Util {
              */
             data = data.replace("// Generates a hash code for [object].",
             [
+                /* Wang hash. Should we interleave these for better performance?
+                 */
+                "static inline uint32_t hashTwoIntegers(int lhs, int rhs)",
+                "{",
+                "  lhs  = (lhs ^ 61) ^ (lhs >> 16);",
+                "  lhs *= 9;",
+                "  lhs  =        lhs ^ (lhs >>  4);",
+                "  lhs *= 0x27d4eb2d;",
+                "  lhs  =        lhs ^ (lhs >> 15);",
+                "",
+                "  rhs  = (rhs ^ 61) ^ (rhs >> 16);",
+                "  rhs *= 9;",
+                "  rhs  =        rhs ^ (rhs >>  4);",
+                "  rhs *= 0x27d4eb2d;",
+                "  rhs  =        rhs ^ (rhs >> 15);",
+                "",
+                "  lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);",
+                "  return lhs;",
+                "}",
+                "",
                 "static inline uint32_t hashTwoNumbers(double a, double b)",
                 "{",
                 "  uint32_t lhs = hashNumber(a);",
@@ -395,7 +479,7 @@ class Util {
                 "// Generates a hash code for [object].",
             ].join("\n"))
 
-            data = data.replace("hashNumber(fn->arity) ^ hashNumber(fn->code.count)", "hashTwoNumbers(fn->arity, fn->code.count)")
+            data = data.replace("hashNumber(fn->arity) ^ hashNumber(fn->code.count)", "hashTwoIntegers(fn->arity, fn->code.count)")
             data = data.replace("hashNumber(range->from) ^ hashNumber(range->to)", "hashTwoNumbers(range->from, range->to)")
 
             /* Replace an `sprintf`.
@@ -555,10 +639,10 @@ class Util {
                 "wrenSymbolTableGet(&module->variableNames, i)")
         }
 
-        return patchWrenAmalgamationForProfileMarkers_(filename, data)
+        return patchWrenAmalgamationForNativeProfileMarkers_(filename, data)
     }
 
-    static patchWrenAmalgamationForProfileMarkers_(filename, data) {
+    static patchWrenAmalgamationForNativeProfileMarkers_(filename, data) {
         if (filename == "wren/src/vm/wren_core.c") {
             if (false) {
                 data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
@@ -1216,6 +1300,349 @@ class Util {
             data = data.replace("createClass(vm, READ_BYTE(), NULL);", "createClass(vm, READ_SHORT(), NULL);")
             data = data.replace("255 fields", "65535 fields")
             data = data.replace("uint8_t field = READ_BYTE();", "uint16_t field = READ_SHORT();")
+        }
+
+        return patchWrenAmalgamationForWrenProfileMarkers_(filename, data)
+    }
+
+    static patchWrenAmalgamationForWrenProfileMarkers_(filename, data) {
+        if (filename == "wren/src/vm/wren_value.h") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = [
+                "#ifndef WRENCH_PROFILE_ENABLED",
+                "#define WRENCH_PROFILE_ENABLED 0",
+                "#endif",
+                "",
+                "#ifndef WRENCH_PROFILE_CONTEXT_T_DEFINED",
+                "typedef void* wrench_profile_context_t;",
+                "#define WRENCH_PROFILE_CONTEXT_T_DEFINED",
+                "#endif",
+                "",
+                "#ifndef WRENCH_PROFILE_ENTER",
+            //  "#define WRENCH_PROFILE_ENTER(moduleName, className, methodName) (wrench_profile_context_t)((uintptr_t)printf(\"entering \%s::\%s::\%s\\n\", moduleName, className, methodName))",
+                "#define WRENCH_PROFILE_ENTER(moduleName, className, methodName) NULL",
+                "#endif",
+                "",
+                "#ifndef WRENCH_PROFILE_LEAVE",
+            //  "#define WRENCH_PROFILE_LEAVE(ctx, moduleName, className, methodName) printf(\"leaving \%s::\%s::\%s\\n\", moduleName, className, methodName)",
+                "#define WRENCH_PROFILE_LEAVE(ctx, moduleName, className, methodName)",
+                "#endif",
+                "",
+            ].join("\n") + data
+
+            data = data.replace("} CallFrame;",
+            [
+                "",
+                "  #if WRENCH_PROFILE_ENABLED",
+                "  wrench_profile_context_t profileContext;",
+                "  const char* profileModule;",
+                "  const char* profileClass;",
+                "  const char* profileMethod;",
+                "  #endif",
+                "} CallFrame;",
+            ].join("\n"))
+
+            data = data.replace("  frame->ip = closure->fn->code.data;",
+            [
+                "  frame->ip = closure->fn->code.data;",
+                "",
+                "  #if WRENCH_PROFILE_ENABLED",
+                "  {",
+                "    frame->profileContext = NULL;",
+                "    frame->profileModule = NULL;",
+                "    frame->profileClass = NULL;",
+                "    frame->profileMethod = NULL;",
+                "  }",
+                "  #endif",
+            ].join("\n"))
+        } else if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace("Method* method;",
+            [
+                "Method* method;",
+                "",
+                "      #if WRENCH_PROFILE_ENABLED",
+                "      wrench_profile_context_t profileContext;",
+                "      const char* moduleName;",
+                "      const char* className;",
+                "      const char* methodName;",
+                "      #endif",
+            ].join("\n"))
+
+            data = data.replace("      switch (method->type)",
+            [
+                "      #if WRENCH_PROFILE_ENABLED",
+                "      {",
+            //  "        moduleName = wrenCurrentModuleName(vm);",
+                "        ASSERT(vm != NULL, \"\");",
+                "        ASSERT(vm->fiber != NULL, \"\");",
+                "        ASSERT(vm->fiber->numFrames != 0, \"\");",
+                "        ASSERT(frame != NULL, \"\");",
+                "        ASSERT(frame->closure != NULL, \"\");",
+                "        ASSERT(frame->closure->fn != NULL, \"\");",
+            //  "        ASSERT(frame->closure->fn->module != NULL, \"\");",
+                "",
+            /*  "        if (frame->closure->fn->module == NULL)", // caller
+                "        {",
+                "          moduleName = \"<unknown>\";",
+                "        }",
+                "        else",
+                "        {",
+            //  "          ASSERT(frame->closure->fn->module->name != NULL, \"\");",
+                "          if (frame->closure->fn->module->name == NULL)",
+                "          {",
+                "            moduleName = \"<unknown>\";",
+                "          }",
+                "          else",
+                "          {",
+                "            ASSERT(frame->closure->fn->module->name->value != NULL, \"\");",
+                "            moduleName = frame->closure->fn->module->name->value;",
+                "          }",
+                "        }",*/
+                "        if (method->type == METHOD_BLOCK)", // callee
+                "        {",
+                "          if (method->as.closure->fn->module == NULL || method->as.closure->fn->module->name == NULL)",
+                "          {",
+                "            moduleName = \"<wren_unknown>\";",
+                "          }",
+                "          else",
+                "          {",
+                "            moduleName = method->as.closure->fn->module->name->value;",
+                "          }",
+                "        }",
+                "        else",
+                "        {",
+                "          moduleName = \"<wren_native>\";",
+                "        }",
+                "",
+                "        className = classObj->name != NULL ? classObj->name->value : \"<wren_unknown>\";",
+                "        methodName = vm->methodNames.data[symbol]->value;",
+                "        profileContext = WRENCH_PROFILE_ENTER(moduleName, className, methodName);",
+                "      }",
+                "      #endif",
+                "",
+                "      switch (method->type)",
+            ].join("\n"))
+
+            data = data.replace("            fiber->stackTop -= numArgs - 1;",
+            [
+                "            fiber->stackTop -= numArgs - 1;",
+                "",
+                "            #if WRENCH_PROFILE_ENABLED",
+                "            {",
+                "              WRENCH_PROFILE_LEAVE(profileContext, moduleName, className, methodName);",
+                "            }",
+                "            #endif",
+            ].join("\n"))
+
+            data = data.replace("            fiber = vm->fiber;",
+            [
+                "            fiber = vm->fiber;",
+                "",
+                "            #if WRENCH_PROFILE_ENABLED",
+                "            {",
+                "              WRENCH_PROFILE_LEAVE(profileContext, moduleName, className, methodName);",
+                "            }",
+                "            #endif",
+                "",
+            ].join("\n"))
+
+            data = data.replace("          if (!checkArity(vm, args[0], numArgs)) {",
+            [
+                "          if (!checkArity(vm, args[0], numArgs)) {",
+                "            #if WRENCH_PROFILE_ENABLED",
+                "            {",
+                "              WRENCH_PROFILE_LEAVE(profileContext, moduleName, className, methodName);",
+                "            }",
+                "            #endif",
+            ].join("\n"))
+
+            data = data.replace(
+            [
+                "          break;",
+                "",
+                "        case METHOD_FOREIGN:",
+            ].join("\n"),
+            [
+                "          #if WRENCH_PROFILE_ENABLED",
+                "          {",
+                "            frame->profileContext = profileContext;",
+                "            frame->profileModule = moduleName;",
+                "            frame->profileClass = className;",
+                "            frame->profileMethod = methodName;",
+                "          }",
+                "          #endif",
+                "          break;",
+                "",
+                "        case METHOD_FOREIGN:",
+            ].join("\n"))
+
+            data = data.replace("          callForeign(vm, fiber, method->as.foreign, numArgs);",
+            [
+                /* HACK: Sneaking in a bugfix from Alain Daniel Herrera García - a foreign function
+                 * may call wrenEnsureSlots, which calls wrenEnsureStack and reallocates the stack,
+                 * and so may change its base address. This means that stackStart has to be updated
+                 * to the value rebased by wrenEnsureSlots and that args has to be updated as well.
+                 */
+                "          {",
+                "            Value* oldStack = fiber->stack;",
+                "            callForeign(vm, fiber, method->as.foreign, numArgs);",
+                "",
+                "            #if WRENCH_PROFILE_ENABLED",
+                "            {",
+                "              WRENCH_PROFILE_LEAVE(profileContext, moduleName, className, methodName);",
+                "            }",
+                "            #endif",
+                "",
+                "            if (fiber->stack != oldStack){",
+                "              stackStart = frame->stackStart;",
+                "              args = fiber->stackTop - numArgs;",
+                "            }",
+                "          }",
+                "",
+            ].join("\n"))
+
+            data = data.replace(
+            [
+                "          break;",
+                "",
+                "        case METHOD_NONE:",
+            ].join("\n"),
+            [
+                "          #if WRENCH_PROFILE_ENABLED",
+                "          {",
+                "            frame->profileContext = profileContext;",
+                "            frame->profileModule = moduleName;",
+                "            frame->profileClass = className;",
+                "            frame->profileMethod = methodName;",
+                "          }",
+                "          #endif",
+                "          break;",
+                "",
+                "        case METHOD_NONE:",
+            ].join("\n"))
+
+            data = data.replace(
+            [
+                "      Value result = POP();",
+            ].join("\n"),
+            [
+                "      Value result = POP();",
+                "",
+                "      #if WRENCH_PROFILE_ENABLED",
+                "      {",
+                "        if (frame->profileModule != NULL)",
+                "        {",
+                "          ASSERT(frame->profileClass != NULL, \"\");",
+                "          ASSERT(frame->profileMethod != NULL, \"\");",
+                "",
+                "          WRENCH_PROFILE_LEAVE(frame->profileContext, frame->profileModule, frame->profileClass, frame->profileMethod);",
+                "        }",
+                "      }",
+                "      #endif",
+                "",
+            ].join("\n"))
+
+            data = data.replace("  ObjFiber* current = vm->fiber;",
+            [
+                "  #if WRENCH_PROFILE_ENABLED",
+                "  {",
+                "    ObjFiber* unwindFiber = vm->fiber;",
+                "",
+                "    while (unwindFiber != NULL)",
+                "    {",
+                "      for (int i = unwindFiber->numFrames - 1; i >= 0; i--)",
+                "      {",
+                "        CallFrame* f = &unwindFiber->frames[i];",
+                "",
+                "        if (f->profileModule != NULL)",
+                "        {",
+                "          WRENCH_PROFILE_LEAVE(f->profileContext, f->profileModule, f->profileClass, f->profileMethod);",
+                "          f->profileModule = NULL;",
+                "        }",
+                "      }",
+                "",
+                "      if (unwindFiber->state == FIBER_TRY) break;",
+                "      unwindFiber = unwindFiber->caller;",
+                "    }",
+                "  }",
+                "  #endif",
+                "",
+                "  ObjFiber* current = vm->fiber;"
+            ].join("\n"))
+        }
+
+        return patchWrenAmalgamationForStackBug_(filename, data)
+    }
+
+    /* Fn.new {
+     *     var foo
+     *     System.print(foo) // Should print null, not Bug.
+     * }.call("Bug")
+     */
+    static patchWrenAmalgamationForStackBug_(filename, data) {
+        if (filename == "wren/src/vm/wren_compiler.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace("  // Return the instance.",
+            [
+                "  methodCompiler.fn->arity = signature->arity;",
+                "",
+                "  // Return the instance.",
+            ].join("\n"))
+
+            data = data.replace("  // Include the full signature in debug messages in stack traces.",
+            [
+                "  methodCompiler.fn->arity = signature.arity;",
+                "",
+                "  // Include the full signature in debug messages in stack traces.",
+            ].join("\n"))
+        } else if (filename == "wren/src/vm/wren_vm.c") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            data = data.replace("  ObjFn* fn = wrenNewFunction(vm, NULL, numParams + 1);",
+            [
+                "  ObjFn* fn = wrenNewFunction(vm, NULL, numParams + 1);",
+                "  fn->arity = numParams;",
+            ].join("\n"))
+
+            data = data.replace("  vm->fiber->stackTop = &vm->fiber->stack[closure->fn->maxSlots];",
+            [
+                "  const int closureNumArgs = closure->fn->arity + 1;",
+                "  vm->fiber->stackTop = &vm->fiber->stack[closureNumArgs];",
+            ].join("\n"))
+
+            data = data.replace("wrenCallFunction(vm, vm->fiber, closure, 0);", "wrenCallFunction(vm, vm->fiber, closure, closureNumArgs);")
+        } else if (filename == "wren/src/vm/wren_vm.h") {
+            if (false) {
+                data = data.split("\n").map { |line| line.trimEnd() }.join("\n")
+            }
+
+            /* Wren functions can be called with more arguments than required. Realign
+             * fiber->stackTop to match closure arity to prevent locals from aliasing.
+             */
+            data = data.replace("  // Grow the stack if needed.",
+            [
+                "  const int closureNumArgs = closure->fn->arity + 1;",
+                "",
+                "  if (numArgs > closureNumArgs)",
+                "  {",
+                "    fiber->stackTop -= numArgs - closureNumArgs;",
+                "    numArgs = closureNumArgs;",
+                "  }",
+                "",
+                "  // Grow the stack if needed.",
+            ].join("\n"))
         }
 
         return data
@@ -5060,6 +5487,11 @@ var main = Fn.new {
             node.sources.add("wrench_tcc.c")
             node.libraries.add("tcc")
         }
+    }
+
+    if (true) {
+        var gasket = NativeNode.new(project, "gasket", "exe")
+        gasket.sources.add("gasket_main.c")
     }
 
     if (command == "build") {
