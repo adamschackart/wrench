@@ -686,6 +686,9 @@ WRENCH_DECL(void, DefaultError, (WrenVM* vm, WrenErrorType type, const char* mod
         #define wrench_alloca alloca
     #endif
 #endif
+#ifndef wrench_atan2
+#define wrench_atan2 atan2
+#endif
 #ifndef wrench_calloc
 #define wrench_calloc calloc
 #endif
@@ -1081,6 +1084,7 @@ typedef struct WrenchMemoryPool
     size_t num_init_blocks;
 
     uint8_t* base;
+    uint8_t* end;
     uint8_t* next;
 }
 WrenchMemoryPool;
@@ -1088,12 +1092,14 @@ WrenchMemoryPool;
 static bool wrenchMemoryPoolInit(WrenchMemoryPool* pool, size_t block_size, size_t num_blocks)
 {
     wrench_assert(block_size >= sizeof(size_t), "%u", (uint32_t)block_size);
+    wrench_assert((block_size % sizeof(size_t)) == 0, "%u", (uint32_t)block_size);
 
     pool->num_blocks = num_blocks;
     pool->block_size = block_size;
     pool->num_free_blocks = num_blocks;
     pool->num_init_blocks = 0;
     pool->base = (uint8_t*)wrench_malloc(block_size * num_blocks);
+    pool->end = pool->base + block_size * num_blocks;
     pool->next = pool->base;
 
     return pool->base != NULL;
@@ -1114,9 +1120,16 @@ static size_t wrenchBlockIndexFromAddress(WrenchMemoryPool* pool, const uint8_t*
     return (((size_t)(p - pool->base)) / pool->block_size);
 }
 
-static bool wrenchIsBlock(WrenchMemoryPool* pool, void* p)
+static inline bool wrenchIsBlock(WrenchMemoryPool* pool, void* p)
 {
-    return (uint8_t*)p >= pool->base && (uint8_t*)p < pool->base + pool->block_size * pool->num_blocks;
+    if (0)
+    {
+        return (uint8_t*)p >= pool->base && (uint8_t*)p < pool->base + pool->block_size * pool->num_blocks;
+    }
+    else
+    {
+        return (uint8_t*)p >= pool->base && (uint8_t*)p < pool->end;
+    }
 }
 
 static void* wrenchBlockAlloc(WrenchMemoryPool* pool)
@@ -4533,9 +4546,10 @@ WRENCH_IMPL(void*, DefaultReallocate, (void* old_memory, size_t new_size, void* 
                 if (new_memory != NULL)
                 {
                     wrench_memcpy(new_memory, old_memory, pool->block_size);
+                    wrenchBlockFree(pool, old_memory);
                 }
 
-                wrenchBlockFree(pool, old_memory);
+                // If malloc fails, new_memory is NULL and old_memory is safely preserved.
                 return new_memory;
             }
             else

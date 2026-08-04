@@ -14,6 +14,47 @@
 --------------------------------------------------------------------------------
 */
 
+static void util_NumUtil_atan2(WrenVM* vm)
+{
+    wrenSetSlotDouble(vm, 0, wrench_atan2(wrenGetSlotDouble(vm, 1), wrenGetSlotDouble(vm, 2)));
+}
+
+static void util_NumUtil_signedPow(WrenVM* vm)
+{
+    const double val = wrenGetSlotDouble(vm, 1);
+    const double exp = wrenGetSlotDouble(vm, 2);
+
+    double val_abs = wrench_fabs(val);
+
+#if 1
+    if (val_abs < 0.0000001)
+#else
+    if (val == 0)
+#endif
+    {
+        wrenSetSlotDouble(vm, 0, 0.0);
+    }
+    else
+    {
+        double sign;
+
+        if (val > 0.0)
+        {
+            sign = 1.0;
+        }
+        else if (val < 0.0)
+        {
+            sign = -1.0;
+        }
+        else
+        {
+            sign = 0.0;
+        }
+
+        wrenSetSlotDouble(vm, 0, sign * wrench_pow(val_abs, exp));
+    }
+}
+
 static const char* wrench_internal_hex4(const int value)
 {
     static const char* hex_string_digits[16] =
@@ -461,6 +502,34 @@ WRENCH_EXPORT bool utilWrenInit(WrenVM* vm)
 
         WREN_BEGIN_CLASS_EX(util, NumUtil, NULL, NULL);
         {
+            if (1)
+            {
+                WREN_METHOD(util, NumUtil, true, atan2, "(y, x)", "(_,_)");
+            }
+            else
+            {
+                WREN_CODE("static atan2(y, x) { y.atan(x) }");
+            }
+
+            if (1)
+            {
+                WREN_METHOD(util, NumUtil, true, signedPow, "(val, exp)", "(_,_)");
+            }
+            else
+            {
+                if (!wrenCode(vm,
+
+                "static signedPow(val, exp) {\n"
+                    "if (val == 0) {\n"
+                        "return 0\n"
+                    "} else {\n"
+                        "return val.sign * val.abs.pow(exp)\n"
+                    "}\n"
+                "}\n"
+
+                )) { return false; }
+            }
+
             if (1)
             {
                 WREN_METHOD(util, NumUtil, true, hex4, "(num)", "(_)");
