@@ -3677,7 +3677,9 @@ WPP_IMPL(void, minify, (wrench_preprocessor_p context, char* input))
             continue;                                                                       \
         }                                                                                   \
 
+    #define IS_OPERATOR(c) (((c) == '+') || ((c) == '-') || ((c) == '&') || ((c) == '|') || ((c) == '=') || ((c) == '<') || ((c) == '>'))
     #define IS_WHITESPACE(c) ((c) == ' ' || (c) == '\t' || (c) == '\r')
+    #define IS_IDENT(c) (((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z') || ((c) >= '0' && (c) <= '9') || ((c) == '_'))
 
     if (!context->keep_comments)
     {
@@ -3806,8 +3808,51 @@ WPP_IMPL(void, minify, (wrench_preprocessor_p context, char* input))
         *w = '\0';
     }
 
+    /* Strip whitespace between commas and operators.
+     */
+    if (1)
+    {
+        char* r = input;
+        char* w = input;
+
+        char quote_char = 0;
+        int in_string = 0;
+
+        while (*r)
+        {
+            BYPASS_STRING_LITERALS();
+
+            if (IS_WHITESPACE(*r))
+            {
+                while (IS_WHITESPACE(*r))
+                {
+                    r++;
+                }
+
+                if (*r != '\0' && *r != '\n' && w > input)
+                {
+                    char prev = *(w - 1);
+                    char next = *r;
+
+                    if ((IS_IDENT(prev) && IS_IDENT(next)) || (prev == next && IS_OPERATOR(prev)))
+                    {
+                        *w++ = ' ';
+                    }
+                }
+                continue;
+            }
+
+            *w++ = *r++;
+        }
+
+        *w = '\0';
+    }
+
     #undef BYPASS_STRING_LITERALS
+
+    #undef IS_OPERATOR
     #undef IS_WHITESPACE
+    #undef IS_IDENT
 }
 
 #endif /* __WRENCH_PREPROCESSOR_C__ */
