@@ -5,6 +5,13 @@
 #ifndef __WRENCH_GASKET_H__
 #define __WRENCH_GASKET_H__
 
+#if !WRENCH_NO_CSTDLIB
+    /*
+     * For bool.
+     */
+    #include <stdbool.h>
+#endif
+
 /*
 ================================================================================
  * ~~ [ types ] ~~ *
@@ -82,6 +89,9 @@ GASKET_DECL(const char*, get_error_string, (gasket_context_p context));
 GASKET_DECL(void, set_preprocessor, (gasket_context_p context, wrench_preprocessor_p preprocessor));
 GASKET_DECL(wrench_preprocessor_p, get_preprocessor, (gasket_context_p context));
 
+GASKET_DECL(void, set_owns_preprocessor, (gasket_context_p context, bool value));
+GASKET_DECL(bool, get_owns_preprocessor, (gasket_context_p context));
+
 // TODO: (s/g)et marker_start
 // TODO: (s/g)et marker_code_end
 // TODO: (s/g)et marker_end
@@ -130,6 +140,9 @@ GASKET_DECL(const char*, process, (const char* source));
 
 #ifndef wrench_abort
 #define wrench_abort abort
+#endif
+#ifndef wrench_fclose
+#define wrench_fclose fclose
 #endif
 #ifndef wrench_fprintf
 #define wrench_fprintf fprintf
@@ -195,8 +208,11 @@ typedef struct gasket_context_t
     WrenVM* vm;
     wrench_preprocessor_p preprocessor;
     gasket_string_builder_t capture_buffer;
+
     bool is_capturing;
     bool allocated;
+    bool owns_preprocessor;
+
     char marker_start[16];
     char marker_code_end[16];
     char marker_end[16];
@@ -339,6 +355,8 @@ static void gasket_string_builder_free(gasket_string_builder_t* b)
 #define wrench_error(...) do                    \
 {                                               \
     wrench_fprintf(wrench_stderr, __VA_ARGS__); \
+    wrench_fprintf(wrench_stderr, "\n");        \
+                                                \
     wrench_abort();                             \
 }                                               \
 while (0)
@@ -413,6 +431,8 @@ GASKET_IMPL(const char*, context_init, (gasket_context_p context))
     wrench_assert(context != NULL, "");
     wrench_memset(context, 0, sizeof(gasket_context_t));
 
+    const char* base_path = "."; // TODO
+
     #ifndef GASKET_MARKER_START
     #define GASKET_MARKER_START "/*[[[wren"
     #endif
@@ -430,7 +450,8 @@ GASKET_IMPL(const char*, context_init, (gasket_context_p context))
 
     if (GASKET_DEFAULT_PREPROCESSOR)
     {
-        wrench_assert(0, "TODO");
+        context->preprocessor = wrench_preprocessor_create(base_path);
+        context->owns_preprocessor = true;
     }
 
     if (GASKET_EXTENDED_VM)
@@ -441,6 +462,13 @@ GASKET_IMPL(const char*, context_init, (gasket_context_p context))
 
         context->vm = wrenNewExtendedVM(0, NULL, GASKET_CALL_GLOBAL_HOOKS);
         config->writeFn = config_write_func;
+
+        if (context->vm == NULL)
+        {
+            return "Failed to create an extended Wren virtual machine for Gasket.";
+        }
+
+        wrenSetBasePath(context->vm, base_path);
 
         wrench_assert(wrenGetUserDataEx(context->vm, 0) == NULL, "");
         wrenSetUserDataEx(context->vm, 0, context);
@@ -453,6 +481,11 @@ GASKET_IMPL(const char*, context_init, (gasket_context_p context))
         config.writeFn = gasket_vm_write;
         context->vm = wrenNewVM(&config);
 
+        if (context->vm == NULL)
+        {
+            return "Failed to create a Wren virtual machine for Gasket.";
+        }
+
         wrench_assert(wrenGetUserData(context->vm) == NULL, "");
         wrenSetUserData(context->vm, context);
     }
@@ -464,9 +497,9 @@ GASKET_IMPL(void, context_free, (gasket_context_p context))
 {
     wrench_assert(context != NULL, "");
 
-    if (GASKET_DEFAULT_PREPROCESSOR)
+    if (context->owns_preprocessor)
     {
-        wrench_assert(0, "TODO");
+        wrench_preprocessor_destroy(context->preprocessor);
     }
 
     if (GASKET_EXTENDED_VM)
@@ -499,6 +532,8 @@ GASKET_IMPL(const char*, get_error_string, (gasket_context_p context))
 GASKET_IMPL(void, set_preprocessor, (gasket_context_p context, wrench_preprocessor_p preprocessor))
 {
     wrench_assert(context != NULL, "");
+    wrench_assert(context->owns_preprocessor ? context->preprocessor == NULL : 1, "");
+
     context->preprocessor = preprocessor;
 }
 
@@ -506,6 +541,18 @@ GASKET_IMPL(wrench_preprocessor_p, get_preprocessor, (gasket_context_p context))
 {
     wrench_assert(context != NULL, "");
     return context->preprocessor;
+}
+
+GASKET_IMPL(void, set_owns_preprocessor, (gasket_context_p context, bool value))
+{
+    wrench_assert(context != NULL, "");
+    context->owns_preprocessor = value;
+}
+
+GASKET_IMPL(bool, get_owns_preprocessor, (gasket_context_p context))
+{
+    wrench_assert(context != NULL, "");
+    return context->owns_preprocessor;
 }
 
 /* TODO: Make this func recursive (so that we could have gasket directives embedded inside gasket directives).
@@ -730,8 +777,26 @@ GASKET_IMPL(const char*, process, (const char* source))
 
 #if defined(GASKET_MAIN)
 
-static char* gasket_read_entire_file(const char* filename)
+/* FIXME
+ */
+#undef wrench_stderr
+#undef wrench_stdin
+#undef wrench_stdout
+
+#ifndef WRENCH_IMPLEMENTATION
+#define WRENCH_IMPLEMENTATION 1
+#include <wrench.h>
+#endif
+
+#ifndef WRENCH_PREPROCESSOR_IMPLEMENTATION
+#define WRENCH_PREPROCESSOR_IMPLEMENTATION 1
+#include <wrench_preprocessor.h>
+#endif
+
+static char* gasket_read_text_file(const char* filename)
 {
+    wrench_assert(filename != NULL && filename[0] != '\0', "%p", filename);
+
     FILE* file = wrench_fopen(filename, "rb");
 
     if (file == NULL)
@@ -798,6 +863,36 @@ static char* gasket_read_entire_file(const char* filename)
     return buffer;
 }
 
+static bool gasket_write_text_file(const char* string, const char* filename)
+{
+    wrench_assert(filename != NULL && filename[0] != '\0', "%p", filename);
+    wrench_assert(string != NULL, "");
+
+    FILE* file = wrench_fopen(filename, "wb");
+
+    if (file == NULL)
+    {
+        wrench_error("Could not open file \"%s\" for writing.", filename);
+        return false;
+    }
+
+    if (wrench_fputs(string, file) == EOF)
+    {
+        wrench_error("Failed to write to file \"%s\".", filename);
+        wrench_fclose(file);
+
+        return false;
+    }
+
+    if (wrench_fclose(file) != 0)
+    {
+        wrench_error("Failed to close file \"%s\" cleanly after writing.", filename);
+        return false;
+    }
+
+    return true;
+}
+
 int GASKET_MAIN(int argc, char** argv)
 {
     /* TODO: Allow for #defines and #include dirs to be passed via the
@@ -805,12 +900,12 @@ int GASKET_MAIN(int argc, char** argv)
      */
     if (argc < 2)
     {
-        wrench_fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+        wrench_fprintf(wrench_stderr, "Usage: %s <filename>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     const char* filename = argv[1];
-    char* source_code = gasket_read_entire_file(filename);
+    char* source_code = gasket_read_text_file(filename);
 
     if (!source_code)
     {
@@ -828,55 +923,47 @@ int GASKET_MAIN(int argc, char** argv)
         return EXIT_FAILURE;
     }
 
-    wrench_preprocessor_p preprocessor = wrench_preprocessor_create(".");
-
-    if (preprocessor == NULL)
+    if (!gasket_get_owns_preprocessor(&gasket_context))
     {
-        wrench_error("Failed to create preprocessor context.");
+        wrench_preprocessor_p preprocessor = wrench_preprocessor_create(".");
 
-        gasket_context_free(&gasket_context);
-        wrench_free(source_code);
+        if (preprocessor == NULL)
+        {
+            wrench_error("Failed to create preprocessor context.");
 
-        return EXIT_FAILURE;
+            gasket_context_free(&gasket_context);
+            wrench_free(source_code);
+
+            return EXIT_FAILURE;
+        }
+
+        gasket_set_owns_preprocessor(&gasket_context, true);
+        gasket_set_preprocessor(&gasket_context, preprocessor);
     }
-
-    gasket_set_preprocessor(&gasket_context, preprocessor);
 
     const char* output = gasket_process_ex(&gasket_context, source_code);
 
-    if (!output)
+    if (output == NULL)
     {
         wrench_error("%s", gasket_get_error_string(&gasket_context));
 
-        wrench_preprocessor_destroy(preprocessor);
         gasket_context_free(&gasket_context);
         wrench_free(source_code);
 
         return EXIT_FAILURE;
     }
 
-    FILE* out_file = wrench_fopen(filename, "wb");
-
-    if (out_file == NULL)
+    if (!gasket_write_text_file(output, filename))
     {
-        wrench_error("Could not open file %s for writing.", filename);
-
-        wrench_preprocessor_destroy(preprocessor);
         gasket_context_free(&gasket_context);
         wrench_free(source_code);
+        wrench_free(output);
 
         return EXIT_FAILURE;
     }
-
-    // TODO: Error checking.
-    wrench_fputs(output, out_file);
-
-    // TODO: Error checking.
-    wrench_fclose(out_file);
 
     wrench_fprintf(wrench_stdout, "Successfully processed and overwrote %s\n", filename);
 
-    wrench_preprocessor_destroy(preprocessor);
     gasket_context_free(&gasket_context);
     wrench_free(source_code);
     wrench_free(output);
