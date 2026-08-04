@@ -9,6 +9,16 @@
 #include <wrench_file.h>
 #include <wrench_vm.h>
 
+#ifndef WRENCH_PREPROCESSOR_IMPLEMENTATION
+#define WRENCH_PREPROCESSOR_IMPLEMENTATION 1
+#include <wrench_preprocessor.h>
+#endif
+
+#ifndef WRENCH_GASKET_IMPLEMENTATION
+#define WRENCH_GASKET_IMPLEMENTATION 1
+#include <wrench_gasket.h>
+#endif
+
 /*
 ================================================================================
  * ~~ [ wren configuration ] ~~ *
@@ -676,6 +686,174 @@ static void vm_WrenVM_callSetter(WrenVM* vm)
 
 /*
 ================================================================================
+ * ~~ [ C-style preprocessor ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+static void vm_Preprocessor_ctor(WrenVM* vm)
+{
+    const char* base_path = wrenGetSlotString(vm, 1);
+    wrench_preprocessor_p preprocessor = wrench_preprocessor_create(base_path);
+
+    if (preprocessor != NULL)
+    {
+        vm_Preprocessor* self = (vm_Preprocessor*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vm_Preprocessor));
+        WRENCH_SET_MAGIC_TAG(self, vm, Preprocessor);
+
+        self->preprocessor = preprocessor;
+        self->collect = true;
+    }
+    else
+    {
+        wrenSetSlotString(vm, 0, "Failed to create preprocessor.");
+        wrenAbortFiber(vm, 0);
+    }
+}
+
+static void vm_Preprocessor_dtor(void* data)
+{
+    WRENCH_CHECK_MAGIC_TAG(data, vm, Preprocessor);
+
+    if (((vm_Preprocessor*)data)->collect)
+    {
+        wrench_preprocessor_destroy(((vm_Preprocessor*)data)->preprocessor);
+    }
+}
+
+/*
+================================================================================
+ * ~~ [ Cog-style preprocessor ] ~~ *
+--------------------------------------------------------------------------------
+*/
+
+static void vm_Gasket_ctor(WrenVM* vm)
+{
+    gasket_context_p context = gasket_context_create();
+
+    if (context != NULL)
+    {
+        vm_Gasket* self = (vm_Gasket*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vm_Gasket));
+        WRENCH_SET_MAGIC_TAG(self, vm, Gasket);
+
+        self->context = context;
+        self->collect = true;
+    }
+    else
+    {
+        wrenSetSlotString(vm, 0, "Failed to create Gasket context.");
+        wrenAbortFiber(vm, 0);
+    }
+}
+
+static void vm_Gasket_dtor(void* data)
+{
+    WRENCH_CHECK_MAGIC_TAG(data, vm, Gasket);
+
+    if (((vm_Gasket*)data)->collect)
+    {
+        gasket_context_free(((vm_Gasket*)data)->context);
+    }
+}
+
+static void vm_Gasket_preprocessor_get(WrenVM* vm)
+{
+    vm_Gasket* self = (vm_Gasket*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, Gasket);
+
+    wrench_preprocessor_p handle = gasket_get_preprocessor(self->context);
+
+    if (handle != NULL)
+    {
+        #if 0
+        {
+            WrenchContext* context = (WrenchContext*)wrenGetUserData(vm);
+            wrench_assert(context != NULL, "");
+
+            if (context->Preprocessor_handle != NULL)
+            {
+                wrenSetSlotHandle(vm, 0, context->Preprocessor_handle);
+            }
+            else
+            {
+                wrenGetVariable(vm, "vm", "Preprocessor", 0);
+                context->Preprocessor_handle = wrenGetSlotHandle(vm, 0);
+            }
+        }
+        #else
+        {
+            wrenGetVariable(vm, "vm", "Preprocessor", 0);
+        }
+        #endif
+
+        vm_Preprocessor* preprocessor = (vm_Preprocessor*)wrenSetSlotNewForeign(vm, 0, 0, sizeof(vm_Preprocessor));
+        WRENCH_SET_MAGIC_TAG(preprocessor, vm, Preprocessor);
+
+        preprocessor->preprocessor = handle;
+        preprocessor->collect = false;
+    }
+    else
+    {
+        wrenSetSlotNull(vm, 0);
+    }
+}
+
+static void vm_Gasket_preprocessor_set(WrenVM* vm)
+{
+    vm_Gasket* self = (vm_Gasket*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, Gasket);
+
+    vm_Preprocessor* value = (vm_Preprocessor*)wrenGetSlotForeign(vm, 1);
+    WRENCH_CHECK_MAGIC_TAG(value, vm, Preprocessor);
+
+    gasket_set_preprocessor(self->context, value->preprocessor);
+}
+
+static void vm_Gasket_ownsPreprocessor_get(WrenVM* vm)
+{
+    WRENCH_STUB();
+}
+
+static void vm_Gasket_ownsPreprocessor_set(WrenVM* vm)
+{
+    WRENCH_STUB();
+}
+
+static void vm_Gasket_process_ex(WrenVM* vm)
+{
+    vm_Gasket* self = (vm_Gasket*)wrenGetSlotForeign(vm, 0);
+    WRENCH_CHECK_MAGIC_TAG(self, vm, Gasket);
+
+    const char* code = wrenGetSlotString(vm, 1);
+    const char* result = gasket_process_ex(self->context, code);
+
+    if (result != NULL)
+    {
+        wrenSetSlotString(vm, 0, result);
+    }
+    else
+    {
+        wrenSetSlotString(vm, 0, gasket_get_error_string(self->context));
+        wrenAbortFiber(vm, 0);
+    }
+}
+
+static void vm_Gasket_process(WrenVM* vm)
+{
+    const char* code = wrenGetSlotString(vm, 1);
+    const char* result = gasket_process(code);
+
+    if (result != NULL)
+    {
+        wrenSetSlotString(vm, 0, result);
+    }
+    else
+    {
+        wrenSetSlotNull(vm, 0);
+    }
+}
+
+/*
+================================================================================
  * ~~ [ (un)hook ] ~~ *
 --------------------------------------------------------------------------------
 */
@@ -704,6 +882,16 @@ static void vm_WrenVM_callSetter(WrenVM* vm)
     }
 
     static bool vmWrenVMWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static bool vmPreprocessorWrenInitEx(WrenVM* vm)
+    {
+        return true;
+    }
+
+    static bool vmGasketWrenInitEx(WrenVM* vm)
     {
         return true;
     }
@@ -911,9 +1099,79 @@ WRENCH_EXPORT bool vmWrenInit(WrenVM* vm)
         }
         WREN_END_CLASS();
 
-        // TODO: Preprocessor
+        WREN_BEGIN_CLASS(vm, Preprocessor);
+        {
+            WREN_CODE("construct new(base_path) {}");
 
-        // TODO: Gasket
+            // TODO: collect
+            // TODO: collect=
+
+            // TODO: ==
+            // TODO: !=
+
+            // TODO: addIncludePath
+            // TODO: define
+            // TODO: undef
+            // TODO: processFile
+            // TODO: processString
+            // TODO: keepSplicedLines
+            // TODO: keepSplicedLines=
+            // TODO: errorString
+            // TODO: errorString=
+            // TODO: directivePrefix
+            // TODO: directivePrefix=
+            // TODO: keepComments
+            // TODO: keepComments=
+            // TODO: setCommentStrings
+            // TODO: basePath
+            // TODO: basePath=
+            // TODO: dumpState
+            // TODO: minify
+
+            if (!vmPreprocessorWrenInitEx(vm))
+            {
+                return false;
+            }
+        }
+        WREN_END_CLASS();
+
+        WREN_BEGIN_CLASS(vm, Gasket);
+        {
+            WREN_CODE("construct new() {}");
+
+            // TODO: collect
+            // TODO: collect=
+
+            // TODO: ==
+            // TODO: !=
+
+            // TODO: errorString
+            // TODO: errorString=
+
+            WREN_PROPERTY(vm, Gasket, false, preprocessor);
+            WREN_PROPERTY(vm, Gasket, false, ownsPreprocessor);
+
+            // TODO: ownsPreprocessor
+            // TODO: ownsPreprocessor=
+
+            // TODO: markerStart
+            // TODO: markerStart=
+
+            // TODO: markerCodeEnd
+            // TODO: markerCodeEnd=
+
+            // TODO: markerEnd
+            // TODO: markerEnd=
+
+            WREN_METHOD_EX(vm, Gasket, false, process, "(code)", "(_)", vm_Gasket_process_ex);
+            WREN_METHOD(vm, Gasket, true, process, "(code)", "(_)");
+
+            if (!vmGasketWrenInitEx(vm))
+            {
+                return false;
+            }
+        }
+        WREN_END_CLASS();
     }
 
     if (!vmWrenInitEx(vm))
