@@ -12,6 +12,7 @@ rm -rf zip
 rm -rf wren.c
 rm -rf run_wren
 rm -rf gasket
+rm -rf bytecode
 rm -rf *.a
 rm -rf *.o
 rm -rf *.so

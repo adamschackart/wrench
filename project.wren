@@ -5491,7 +5491,12 @@ var main = Fn.new {
 
     if (true) {
         var gasket = NativeNode.new(project, "gasket", "exe")
-        gasket.sources.add("gasket_main.c")
+        gasket.sources.add("wrench_gasket_main.c")
+    }
+
+    if (false) {
+        var bytecode = NativeNode.new(project, "bytecode", "exe")
+        bytecode.sources.add("wrench_bytecode_main.c")
     }
 
     if (command == "build") {
